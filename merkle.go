@@ -7,7 +7,6 @@ package merkle
 
 import (
 	"errors"
-	// "fmt"
 	"hash"
 )
 
@@ -24,35 +23,65 @@ func NewNode(h hash.Hash) Node {
 }
 
 type Tree struct {
-	Root  *Node
-	Nodes [][]Node
+	Nodes       [][]Node
+	FillerBlock []byte
 }
 
-func NewTree(data [][]byte, hashf NewHash) Tree {
-	t := Tree{}
-	t.Generate(data, hashf)
-	return t
+func NewTree(_filler_block ...[]byte) Tree {
+	var filler_block []byte
+	if _filler_block == nil || _filler_block[0] == nil {
+		filler_block = DefaultFillerBlock()
+	} else {
+		filler_block = _filler_block[0]
+	}
+	return Tree{FillerBlock: filler_block}
 }
 
-func (self *Tree) Generate(data [][]byte, hashf NewHash) error {
+func (self *Tree) Leaves() []Node {
+	if self.Nodes == nil {
+		return nil
+	}
+	return self.Nodes[0]
+}
+
+func (self *Tree) Root() *Node {
+	if self.Nodes == nil {
+		return nil
+	}
+	return &self.Nodes[len(self.Nodes)-1][0]
+}
+
+func (self *Tree) Generate(blocks [][]byte, hashf NewHash) error {
 	/* Generates the tree nodes */
-	if data == nil {
-		return errors.New("data must be non-nil")
+	if blocks == nil {
+		return errors.New("Blocks must be non-nil")
+	}
+	if self.FillerBlock == nil {
+		return errors.New("FillerBlock must be set to a non-nil value")
 	}
 
-	node_count := CalculateNodeCount(uint64(len(data)))
+	block_count := uint64(len(blocks))
+	leaf_count := nextPowerOfTwo(block_count)
+	node_count := CalculateNodeCount(leaf_count)
 	height := CalculateTreeHeight(node_count)
-	nodes := make([][]Node, 0, height)
+	nodes := make([][]Node, height)
 	leaves := make([]Node, 0, node_count)
 
 	// Create the leaf nodes
-	for _, block := range data {
-		h := hashf()
-		_, err := h.Write(block)
+	for _, block := range blocks {
+		node, err := self.createNode(hashf, block)
 		if err != nil {
 			return err
 		}
-		node := NewNode(h)
+		leaves = append(leaves, node)
+	}
+
+	// Add the filler blocks to the leaves so that the tree is complete
+	for i := block_count; i < leaf_count; i++ {
+		node, err := self.createNode(hashf, self.FillerBlock)
+		if err != nil {
+			return err
+		}
 		leaves = append(leaves, node)
 	}
 	nodes[0] = leaves
@@ -61,40 +90,55 @@ func (self *Tree) Generate(data [][]byte, hashf NewHash) error {
 	if height != 0 {
 		var h uint64 = 0
 		for ; h < height-1; h++ {
-			node, err := self.generateNodeLevel(nodes[h], hashf)
+			level, err := self.generateNodeLevel(nodes[h], hashf)
 			if err != nil {
 				return err
 			}
-			nodes[h+1] = node
+			nodes[h+1] = level
 		}
 	}
-	self.Root = &nodes[len(nodes)-1][0]
 	self.Nodes = nodes
 
 	return nil
 }
 
+func (self *Tree) createNode(hashf NewHash, block []byte) (Node, error) {
+	/* Creates a new Node with a Hash of block []byte and adds it to the
+	node array */
+	h := hashf()
+	_, err := h.Write(block)
+	if err != nil {
+		return NewNode(nil), err
+	}
+	return NewNode(h), nil
+}
+
 func (self *Tree) generateNodeLevel(nodes []Node, hashf NewHash) ([]Node, error) {
-	new_nodes := make([]Node, 0, len(nodes)/2)
-	for i := 0; i < len(nodes); i += 2 {
+	/* Creates all the non-leaf nodes for a certain height. The number of nodes
+	is calculated to be 1/2 the number of nodes in the lower rung.  The newly
+	created nodes will reference their Left and Right children */
+	new_nodes := make([]Node, len(nodes)/2)
+	for i := 0; i < cap(new_nodes); i++ {
 		// concatenate the two children hashes and hash them
 		size := nodes[i].Hash.Size()
 		data := make([]byte, 0, size*2)
-		data = nodes[i].Hash.Sum(data)
-		data = nodes[i+1].Hash.Sum(data)
-		h := hashf()
-		_, err := h.Write(data)
+		data = nodes[2*i].Hash.Sum(data)
+		data = nodes[2*i+1].Hash.Sum(data)
+		node, err := self.createNode(hashf, data)
 		if err != nil {
 			return nil, err
 		}
 
 		// create the new node and point to the children
-		n := NewNode(h)
-		n.Left = &nodes[i]
-		n.Right = &nodes[i+1]
-		new_nodes = append(new_nodes, n)
+		node.Left = &nodes[i]
+		node.Right = &nodes[i+1]
+		new_nodes[i] = node
 	}
 	return new_nodes, nil
+}
+
+func DefaultFillerBlock() []byte {
+	return make([]byte, 16)
 }
 
 func CalculateNodeCount(element_count uint64) uint64 {
