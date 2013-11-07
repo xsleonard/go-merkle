@@ -7,10 +7,53 @@ package merkle
 
 import (
 	"crypto/md5"
+	"crypto/sha256"
 	"errors"
 	"hash"
 	"testing"
 )
+
+// SimpleHash: does nothing
+type SimpleHash struct{}
+
+func NewSimpleHash() hash.Hash {
+	return SimpleHash{}
+}
+func (self SimpleHash) Write(p []byte) (int, error) {
+	return 32, nil
+}
+func (self SimpleHash) Sum(p []byte) []byte {
+	return p
+}
+func (self SimpleHash) Reset() {
+}
+func (self SimpleHash) Size() int {
+	return 32
+}
+func (self SimpleHash) BlockSize() int {
+	return 32
+}
+
+// FailingHash: always returns error on Write
+type FailingHash struct{}
+
+func NewFailingHash() hash.Hash {
+	return FailingHash{}
+}
+func (self FailingHash) Write(p []byte) (int, error) {
+	return 0, errors.New("Failed to write hash")
+}
+func (self FailingHash) Sum(p []byte) []byte {
+	return p
+}
+func (self FailingHash) Reset() {
+}
+func (self FailingHash) Size() int {
+	return 0
+}
+func (self FailingHash) BlockSize() int {
+	return 0
+}
 
 func failNotEqual(t *testing.T, args ...interface{}) {
 	t.Errorf("%s(%v) != %v (%v, instead)", args...)
@@ -136,7 +179,7 @@ func TestIsPowerOfTwo(t *testing.T) {
 }
 
 func TestNewNode(t *testing.T) {
-	h := md5.New()
+	h := NewSimpleHash()
 	n := NewNode(h)
 	if n.Hash != h {
 		failNotEqual(t, "NewNode", h, h, n.Hash)
@@ -189,7 +232,7 @@ func verifyFillerBlock(t *testing.T, tree *Tree, expect []byte) {
 func TestTreeUngenerated(t *testing.T) {
 	tree := Tree{}
 	// If data is nil, it should handle that:
-	err := tree.Generate(nil, md5.New)
+	err := tree.Generate(nil, NewSimpleHash)
 	if err == nil {
 		t.Log("tree.Generate() expected error for nil data")
 		t.FailNow()
@@ -207,7 +250,7 @@ func TestTreeUngenerated(t *testing.T) {
 	if tree.Nodes != nil {
 		t.Errorf("tree.Nodes should be nil")
 	}
-	err = tree.Generate(make([][]byte, 1), md5.New)
+	err = tree.Generate(make([][]byte, 1), NewSimpleHash)
 	if err == nil {
 		t.Log("tree.Generate() expected error for unset FillerBlock")
 		t.FailNow()
@@ -236,7 +279,7 @@ func TestTreeGenerate(t *testing.T) {
 	data := createDummyTreeData(block_count, block_size)
 
 	// Generate the tree
-	err := tree.Generate(data, md5.New)
+	err := tree.Generate(data, NewSimpleHash)
 	if err != nil {
 		t.Logf("tree.Generate error: %v", err)
 		t.FailNow()
@@ -269,6 +312,12 @@ func verifyGeneratedTree(t *testing.T, tree *Tree) {
 		t.FailNow()
 	}
 
+	if len(tree.Nodes) != cap(tree.Nodes) {
+		t.Logf("tree.Nodes len %d should be equal to its cap %d",
+			len(tree.Nodes), cap(tree.Nodes))
+		t.FailNow()
+	}
+
 	// The leaves should not have children
 	for _, n := range tree.Leaves() {
 		if n.Left != nil || n.Right != nil {
@@ -276,30 +325,30 @@ func verifyGeneratedTree(t *testing.T, tree *Tree) {
 		}
 	}
 
-	// All the other nodes should have children
-	for i, row := range tree.Nodes[1:] {
+	height := tree.Height()
+	var i uint64 = 2
+	for ; i <= height; i++ {
+		// All the other nodes should have children, and their children
+		// should be in the lower level
+		lower := tree.GetNodesAtHeight(i - 1)
+		row := tree.GetNodesAtHeight(i)
 		for _, n := range row {
 			if n.Left == nil || n.Right == nil {
 				t.Error("All intermediate nodes should have both children")
 			}
-			if !containsNode(tree.Nodes[i], n.Left) ||
-				!containsNode(tree.Nodes[i], n.Right) {
+			if !containsNode(lower, n.Left) || !containsNode(lower, n.Right) {
 				t.Error("Child nodes must be in the row below")
 			}
 		}
-	}
 
-	// Each row should have a power of 2 number of nodes
-	for i, row := range tree.Nodes {
+		// Each row should have a power of 2 number of nodes
 		if !isPowerOfTwo(uint64(len(row))) {
 			t.Errorf("Each height of the tree should contain a power-of-two"+
 				" number of nodes. Row %d contains %d nodes.", i, len(row))
 		}
-	}
 
-	// Each row should be 1/2 the previous
-	for i, row := range tree.Nodes[1:] {
-		prev := len(tree.Nodes[i])
+		// Each row should be len 1/2 the previous
+		prev := len(lower)
 		if len(row) != prev/2 {
 			t.Errorf("Each height of the tree should contain 1/2 as many "+
 				"nodes as the next lower height. Row %d contains %d nodes, "+
@@ -307,64 +356,28 @@ func verifyGeneratedTree(t *testing.T, tree *Tree) {
 		}
 	}
 
+	root_row := tree.GetNodesAtHeight(height)
+	// The root row should exist
+	if root_row == nil {
+		t.Log("The root row must be non-nil")
+		t.FailNow()
+	}
+
 	// The root row should be of length 1
-	if len(tree.Nodes[len(tree.Nodes)-1]) != 1 {
+	if len(root_row) != 1 {
 		t.Log("The root row should contain only 1 node")
 		t.FailNow()
 	}
 
 	// the Root() should be the only item in the top row
-	root_row := tree.Nodes[len(tree.Nodes)-1]
-	if tree.Root() != &root_row[0] {
+	if tree.Root() != &(root_row[0]) {
 		t.Error("tree.Root() is not the expected node")
 	}
 
 	// The Leaves() should the deepest row
-	if len(tree.Leaves()) != len(tree.Nodes[0]) {
+	if len(tree.Leaves()) != len(tree.GetNodesAtHeight(1)) {
 		t.Error("tree.Leaves() is not the expected row")
 	}
-}
-
-// FailingHash: always returns error on Write
-type FailingHash struct{}
-
-func NewFailingHash() hash.Hash {
-	return FailingHash{}
-}
-func (self FailingHash) Write(p []byte) (int, error) {
-	return 0, errors.New("Failed to write hash")
-}
-func (self FailingHash) Sum(p []byte) []byte {
-	return p
-}
-func (self FailingHash) Reset() {
-}
-func (self FailingHash) Size() int {
-	return 0
-}
-func (self FailingHash) BlockSize() int {
-	return 0
-}
-
-// SimpleHash: does nothing
-type SimpleHash struct{}
-
-func NewSimpleHash() hash.Hash {
-	return SimpleHash{}
-}
-func (self SimpleHash) Write(p []byte) (int, error) {
-	return 32, nil
-}
-func (self SimpleHash) Sum(p []byte) []byte {
-	return p
-}
-func (self SimpleHash) Reset() {
-}
-func (self SimpleHash) Size() int {
-	return 32
-}
-func (self SimpleHash) BlockSize() int {
-	return 32
 }
 
 func TestGenerateFailedHash(t *testing.T) {
@@ -383,8 +396,55 @@ func TestGenerateFailedHash(t *testing.T) {
 
 /* Benchmarks */
 
-// func BenchmarkGenerate(b *testing.B) {
-// 	data := createDummyTreeData(count, size)
-// 	h := NewSimpleHash()
-// 	b.ResetTimer()
-// }
+func generateBenchmark(b *testing.B, data [][]byte, hashf NewHash) {
+	tree := NewTree()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tree.Generate(data, hashf)
+	}
+}
+
+func noHashBenchmark(b *testing.B, n int) {
+	data := createDummyTreeData(n, 1)
+	generateBenchmark(b, data, NewSimpleHash)
+}
+
+func BenchmarkGenerate_1K_Blocks_NoHash(b *testing.B) {
+	noHashBenchmark(b, 1000)
+}
+
+func BenchmarkGenerate_100K_Blocks_NoHash(b *testing.B) {
+	noHashBenchmark(b, 100000)
+}
+
+func BenchmarkGenerate_1M_Blocks_NoHash(b *testing.B) {
+	noHashBenchmark(b, 1000000)
+}
+
+func BenchmarkGenerate_512MB_512KB_MD5(b *testing.B) {
+	mb := 512
+	block_size := 512 * 1024
+	data := createDummyTreeData((mb*1024*1024)/block_size, block_size)
+	generateBenchmark(b, data, md5.New)
+}
+
+func BenchmarkGenerate_512MB_512KB_SHA256(b *testing.B) {
+	mb := 512
+	block_size := 512 * 1024
+	data := createDummyTreeData((mb*1024*1024)/block_size, block_size)
+	generateBenchmark(b, data, sha256.New)
+}
+
+func BenchmarkGenerate_1GB_2MB_MD5(b *testing.B) {
+	mb := 1024
+	block_size := 2 * 1024 * 1024
+	data := createDummyTreeData((mb*1024*1024)/block_size, block_size)
+	generateBenchmark(b, data, md5.New)
+}
+
+func BenchmarkGenerate_1GB_2MB_SHA256(b *testing.B) {
+	mb := 1024
+	block_size := 2 * 1024 * 1024
+	data := createDummyTreeData((mb*1024*1024)/block_size, block_size)
+	generateBenchmark(b, data, sha256.New)
+}
