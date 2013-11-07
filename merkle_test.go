@@ -9,6 +9,7 @@ import (
     "crypto/md5"
     "crypto/sha256"
     "errors"
+    "fmt"
     "github.com/bmizerany/assert"
     "hash"
     "testing"
@@ -36,13 +37,28 @@ func (self SimpleHash) BlockSize() int {
 }
 
 // FailingHash: always returns error on Write
-type FailingHash struct{}
-
-func NewFailingHash() hash.Hash {
-    return FailingHash{}
+type FailingHash struct {
+    SucceedFor    int
+    writeAttempts *int
 }
+
+func NewFailingHashAt(n int) NewHash {
+    write_attempts := 0
+    return func() hash.Hash {
+        return FailingHash{SucceedFor: n, writeAttempts: &write_attempts}
+    }
+}
+
+var NewFailingHash NewHash = NewFailingHashAt(0)
+
 func (self FailingHash) Write(p []byte) (int, error) {
-    return 0, errors.New("Failed to write hash")
+    *self.writeAttempts += 1
+    fmt.Printf("WriteAttempts, SucceedFor: %d, %d\n", *self.writeAttempts, self.SucceedFor)
+    if *self.writeAttempts > self.SucceedFor {
+        return 0, errors.New("Failed to write hash")
+    } else {
+        return 0, nil
+    }
 }
 func (self FailingHash) Sum(p []byte) []byte {
     return p
@@ -412,20 +428,32 @@ func TestTreeGenerate(t *testing.T) {
         t.FailNow()
     }
     verifyGeneratedTree(t, &tree)
+
+    // Generating with no blocks should return error
+    err = tree.Generate(make([][]byte, 0, 1), NewSimpleHash)
+    assert.NotEqual(t, err, nil)
+    assert.Equal(t, err.Error(), "Empty tree")
 }
 
 func TestGenerateFailedHash(t *testing.T) {
     tree := NewTree()
     data := createDummyTreeData(16, 16)
+    // Fail hash during the leaf generation
     err := tree.Generate(data, NewFailingHash)
-    if err == nil {
-        t.Log("tree.Generate() should have returned error for failed hash write")
-        t.FailNow()
-    }
-    if err.Error() != "Failed to write hash" {
-        t.Errorf("tree.Generate() failed with wrong error for failed hash: %v",
-            err)
-    }
+    assert.NotEqual(t, err, nil)
+    assert.Equal(t, err.Error(), "Failed to write hash")
+
+    // Fail hash during filler leaf node generation
+    data = createDummyTreeData(14, 16)
+    err = tree.Generate(data, NewFailingHashAt(15))
+    assert.NotEqual(t, err, nil)
+    assert.Equal(t, err.Error(), "Failed to write hash")
+
+    // Fail hash during internal node generation
+    data = createDummyTreeData(16, 16)
+    err = tree.Generate(data, NewFailingHashAt(20))
+    assert.NotEqual(t, err, nil)
+    assert.Equal(t, err.Error(), "Failed to write hash")
 }
 
 func TestGetNodesAtHeight(t *testing.T) {
