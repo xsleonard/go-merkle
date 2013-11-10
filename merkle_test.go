@@ -405,6 +405,7 @@ func TestTreeUngenerated(t *testing.T) {
     assert.Equal(t, err.Error(), "Blocks must be non-nil")
     assert.Nil(t, tree.Leaves())
     assert.Nil(t, tree.Root())
+    assert.Equal(t, tree.Height(), uint64(0))
     assert.Nil(t, tree.Nodes)
 }
 
