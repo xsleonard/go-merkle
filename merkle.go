@@ -7,131 +7,127 @@ package merkle
 
 import (
     "errors"
+    "fmt"
     "hash"
 )
 
-type NewHash func() hash.Hash
-
 type Node struct {
-    Hash  hash.Hash
+    Hash  []byte
     Left  *Node
     Right *Node
 }
 
 func NewNode(h hash.Hash) Node {
-    return Node{Hash: h}
+    var b []byte = nil
+    if h != nil {
+        b = h.Sum(make([]byte, h.Size()))
+    }
+    return Node{Hash: b}
 }
 
 type Tree struct {
-    Nodes       []Node
-    FillerBlock []byte
+    Nodes  []Node
+    Levels [][]Node
 }
 
-func NewTree(_filler_block ...[]byte) Tree {
-    /* Creates a tree with optional user-provided FillerBlock. Otherwise,
-       defaults to DefaultFillerBlock() */
-    var filler_block []byte
-    if _filler_block == nil || _filler_block[0] == nil {
-        filler_block = DefaultFillerBlock()
-    } else {
-        filler_block = _filler_block[0]
-    }
-    return Tree{FillerBlock: filler_block, Nodes: nil}
+func NewTree() Tree {
+    return Tree{Nodes: nil, Levels: nil}
 }
 
 func (self *Tree) Leaves() []Node {
     /* Returns a slice of the leaf nodes in the tree, if available, else nil */
-    if self.Nodes == nil {
+    if self.Levels == nil {
         return nil
+    } else {
+        return self.Levels[len(self.Levels)-1]
     }
-    return self.Nodes[0 : 1<<(self.Height()-1)]
 }
 
 func (self *Tree) Root() *Node {
     /* Returns the root node of the tree, if available, else nil */
     if self.Nodes == nil {
         return nil
+    } else {
+        return &self.Levels[0][0]
     }
-    return &self.Nodes[len(self.Nodes)-1]
 }
 
 func (self *Tree) GetNodesAtHeight(h uint64) []Node {
-    /* Returns all nodes at a given height */
-    if self.Nodes == nil {
+    /* Returns all nodes at a given height, where height 1 returns a 1-element
+       slice containing the root node, and a height of tree.Height() returns
+       the leaves */
+    if self.Levels == nil || h == 0 || h > uint64(len(self.Levels)) {
         return nil
+    } else {
+        return self.Levels[h-1]
     }
-    index, length := getNodeBoundsAtHeight(h, self.Height())
-    if index < 0 {
-        return nil
-    }
-    return self.Nodes[index : index+length]
 }
 
 func (self *Tree) Height() uint64 {
     /* Returns the height of this tree */
-    return CalculateTreeHeight(uint64(len(self.Nodes)))
+    if self.Levels == nil {
+        return 0
+    } else {
+        return uint64(len(self.Levels))
+    }
 }
 
-func (self *Tree) Generate(blocks [][]byte, hashf NewHash) error {
+func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
     /* Generates the tree nodes */
     if blocks == nil {
         return errors.New("Blocks must be non-nil")
-    }
-    if self.FillerBlock == nil {
-        return errors.New("FillerBlock must be set to a non-nil value")
     }
 
     block_count := uint64(len(blocks))
     leaf_count := nextPowerOfTwo(block_count)
     node_count := CalculateNodeCount(leaf_count)
     height := CalculateTreeHeight(node_count)
+    true_node_count := CalculateUnbalancedNodeCount(height, block_count)
+    // fmt.Printf("Node count: %d\n", node_count)
+    // fmt.Printf("True node count: %d\n", true_node_count)
     if height == 0 {
         return errors.New("Empty tree")
     }
-    nodes := make([]Node, 0, node_count)
-    leaves := nodes[0:leaf_count]
+    levels := make([][]Node, height)
+    nodes := make([]Node, 0, true_node_count)
+    leaves := nodes[0:0]
 
     // Create the leaf nodes
-    for i, block := range blocks {
+    for _, block := range blocks {
         node, err := self.createNode(hashf, block)
         if err != nil {
             return err
         }
-        leaves[i] = node
+        leaves = append(leaves, node)
     }
-
-    // Add the filler blocks to the leaves so that the tree is complete
-    for i := block_count; i < leaf_count; i++ {
-        node, err := self.createNode(hashf, self.FillerBlock)
-        if err != nil {
-            return err
-        }
-        leaves[i] = node
-    }
+    nodes = leaves[:]
+    levels[height-1] = leaves[:]
 
     // Create each node level
-    if height != 0 {
-        var h uint64 = 2
-        for ; h <= height; h++ {
-            bindex, blength := getNodeBoundsAtHeight(h-1, height)
-            cindex := bindex + blength
-            clength := blength / 2
-            below := nodes[bindex : bindex+blength]
-            current := nodes[cindex : cindex+clength]
-            err := self.generateNodeLevel(below, current, hashf)
+    if height > 1 {
+        h := height - 1
+        for ; h > 0; h-- {
+            below := levels[h]
+            current := nodes[len(nodes):len(nodes)]
+            current, err := self.generateNodeLevel(below, current, hashf)
             if err != nil {
                 return err
             }
+            levels[h-1] = current[:]
+            nodes = nodes[:len(nodes)+len(current)]
         }
     }
-    self.Nodes = nodes[:node_count]
+
+    self.Nodes = nodes
+    self.Levels = levels
     return nil
 }
 
-func (self *Tree) createNode(hashf NewHash, block []byte) (Node, error) {
+func (self *Tree) createNode(h hash.Hash, block []byte) (Node, error) {
     /* Creates a new Node with a Hash of block []byte and adds it to the
        node array */
-    h := hashf()
+    fmt.Printf("Block: %v\n", block)
+    defer h.Reset()
     _, err := h.Write(block)
     if err != nil {
         return NewNode(nil), err
@@ -139,32 +135,66 @@ func (self *Tree) createNode(hashf NewHash, block []byte) (Node, error) {
     return NewNode(h), nil
 }
 
-func (self *Tree) generateNodeLevel(below []Node, current []Node, hashf NewHash) error {
+func (self *Tree) generateNodeLevel(below []Node, current []Node, h hash.Hash) ([]Node, error) {
     /* Creates all the non-leaf nodes for a certain height. The number of nodes
        is calculated to be 1/2 the number of nodes in the lower rung.  The newly
        created nodes will reference their Left and Right children */
-    data := make([]byte, 0, hashf().Size()*2)
-    for i := 0; i < len(current); i++ {
-        // concatenate the two children hashes and hash them
-        data = below[2*i].Hash.Sum(data)
-        data = below[2*i+1].Hash.Sum(data)
-        node, err := self.createNode(hashf, data)
-        if err != nil {
-            return err
+    data := make([]byte, 0, h.Size()*2)
+    end := (len(below) + (len(below) % 2)) / 2
+    for i := 0; i < end; i++ {
+        // Concatenate the two children hashes and hash them, if both are
+        // available, otherwise reuse the hash from the lone node
+        var node Node
+        ileft := 2 * i
+        iright := 2*i + 1
+        left := &below[ileft]
+        var right *Node = nil
+        if len(below) > iright {
+            right = &below[iright]
         }
-        data = data[:]
+        if right == nil {
+            b := make([]byte, len(left.Hash))
+            copy(b, left.Hash[:])
+            node = Node{Hash: b}
+        } else {
+            var err error
+            copy(data, below[ileft].Hash[:])
+            fmt.Printf("Data1: %v\n", data)
+            copy(data, below[iright].Hash[:])
+            fmt.Printf("Data2: %v\n", data)
+            node, err = self.createNode(h, data)
+            if err != nil {
+                return nil, err
+            }
+        }
+        // Point the new node to its children and save
+        node.Left = left
+        node.Right = right
+        current = append(current, node)
 
-        // create the new node and point to the children
-        node.Left = &below[2*i]
-        node.Right = &below[2*i+1]
-        current[i] = node
+        // Reset the data slice
+        data = data[:]
     }
-    return nil
+    return current, nil
 }
 
-func DefaultFillerBlock() []byte {
-    /* Returns a zeroed 16-byte array */
-    return make([]byte, 16)
+func CalculateUnbalancedNodeCount(height uint64, size uint64) uint64 {
+    /* Calculates the number of nodes in a binary tree unbalanced strictly on
+       the right side.  Height is assumed to be equal to
+       CalculateTreeHeight(CalculateNodeCount(size))
+    */
+    if isPowerOfTwo(size) {
+        return CalculateNodeCount(size)
+    }
+    count := size
+    prev := size
+    var i uint64 = 1
+    for ; i < height; i++ {
+        next := (prev + (prev % 2)) / 2
+        count += next
+        prev = next
+    }
+    return count
 }
 
 func CalculateNodeCount(element_count uint64) uint64 {
@@ -185,23 +215,6 @@ func CalculateTreeHeight(node_count uint64) uint64 {
     /* Returns the height of a full, complete binary tree given node_count
        nodes */
     return ceilLogBaseTwo(node_count)
-}
-
-func getNodeBoundsAtHeight(h uint64, max_h uint64) (index int, length int) {
-    /* Returns the index and length for a slice into a linear []Node array
-       at a given height */
-    if h == 0 || h > max_h {
-        return -1, -1
-    }
-    // Calculate number of previous nodes
-    index = 0
-    var i uint64 = 1
-    for ; i < h; i++ {
-        index += 1 << (max_h - i)
-    }
-    // Calculate number of nodes at h
-    length = 1 << (max_h - h)
-    return
 }
 
 func isPowerOfTwo(n uint64) bool {
