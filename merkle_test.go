@@ -11,47 +11,48 @@ import (
     "crypto/rand"
     "crypto/sha256"
     "errors"
-    "fmt"
     "github.com/stretchr/testify/assert"
     "hash"
     "testing"
 )
 
 // SimpleHash: does nothing
-type SimpleHash struct {
-    Data []byte
-}
+
+var SimpleHashData []byte
+
+type SimpleHash struct{}
 
 func NewSimpleHash() hash.Hash {
-    return SimpleHash{Data: nil}
+    return SimpleHash{}
 }
+
 func (self SimpleHash) Write(p []byte) (int, error) {
-    fmt.Printf("Setting data to: %v\n", p)
     size := self.Size()
-    hashed := make([]byte, size)
-    fill := 0
-    if len(self.Data) < size {
-        fill = size - len(p)
-        copy(hashed[:], p[:])
-    } else {
-        copy(hashed[:], p[:size])
+    datalen := (len(p) / size) * size
+    if len(p) == 0 || len(p)%size != 0 {
+        datalen += size
     }
-    for i := 0; i < fill; i++ {
-        hashed[i+len(p)] = 0
+    data := make([]byte, datalen)
+    copy(data, p)
+
+    block := make([]byte, size)
+    copy(block, data[:size])
+    for i := 1; i < len(data)/size; i++ {
+        _block := data[i*size : (i+1)*size]
+        for j, c := range _block {
+            block[j] += c
+        }
     }
-    self.Data = hashed
-    fmt.Printf("self.Data: %v\n", hashed)
-    return 32, nil
+
+    SimpleHashData = append(SimpleHashData, block...)
+    return size, nil
 }
 func (self SimpleHash) Sum(p []byte) []byte {
-    fmt.Printf("Sum input: %v\n", p)
-    fmt.Printf("self.Data: %v\n", self.Data)
-    p = append(p[:], self.Data[:]...)
-    fmt.Printf("Sum output: %v\n", p)
+    p = append(p[:], SimpleHashData[:]...)
     return p
 }
 func (self SimpleHash) Reset() {
-    self.Data = nil
+    SimpleHashData = nil
 }
 func (self SimpleHash) Size() int {
     return 32
@@ -82,12 +83,14 @@ func (self NotHash) BlockSize() int {
 
 // FailingHash: always returns error on Write
 type FailingHash struct {
-    SucceedFor    int
-    writeAttempts int
+    SucceedFor int
 }
 
+var failingHashWriteAttempts int = 0
+
 func NewFailingHashAt(n int) FailingHash {
-    return FailingHash{SucceedFor: n, writeAttempts: 0}
+    failingHashWriteAttempts = 0
+    return FailingHash{SucceedFor: n}
 }
 
 func NewFailingHash() FailingHash {
@@ -95,8 +98,8 @@ func NewFailingHash() FailingHash {
 }
 
 func (self FailingHash) Write(p []byte) (int, error) {
-    self.writeAttempts += 1
-    if self.writeAttempts > self.SucceedFor {
+    failingHashWriteAttempts += 1
+    if failingHashWriteAttempts > self.SucceedFor {
         return 0, errors.New("Failed to write hash")
     } else {
         return 0, nil
@@ -280,7 +283,11 @@ func createDummyTreeData(count, size int, use_rand bool) [][]byte {
     for i := 0; i < count; i++ {
         garbage := make([]byte, size)
         if use_rand {
-            rand.Read(garbage[:])
+            read := 0
+            for read < size {
+                n, _ := rand.Read(garbage[read:])
+                read += n
+            }
         } else {
             for i := 0; i < size; i++ {
                 garbage[i] = byte((i + 1) % 0xFF)
@@ -320,12 +327,15 @@ func verifyGeneratedTree(t *testing.T, tree *Tree) {
                 // if its unbalanced
                 assert.Nil(t, n.Right)
                 // Its hash should be the same as the left node hash
-                assert.Equal(t, n.Left.Hash, n.Hash)
+                assert.Equal(t, n.Left.Hash, n.Hash,
+                    "Left child hash should equal node hash when right child is nil")
             } else {
                 assert.NotNil(t, n.Right)
                 assert.Equal(t, n.Right, &deeper[j*2+1])
-                assert.NotEqual(t, bytes.Equal(n.Left.Hash, n.Hash), true)
-                assert.NotEqual(t, bytes.Equal(n.Right.Hash, n.Hash), true)
+                assert.NotEqual(t, bytes.Equal(n.Right.Hash, n.Hash), true,
+                    "Right child hash should not equal node hash")
+                assert.NotEqual(t, bytes.Equal(n.Left.Hash, n.Hash), true,
+                    "Left child hash should not equal node hash")
             }
         }
 
@@ -359,13 +369,27 @@ func verifyInitialState(t *testing.T, tree *Tree) {
 
 func TestNewNode(t *testing.T) {
     h := NewSimpleHash()
-    n := NewNode(h)
-    data := make([]byte, h.Size())
-    _, err := h.Write(data)
-    assert.NotNil(t, err)
-    assert.Equal(t, bytes.Equal(n.Hash, data), true)
-    n = NewNode(nil)
+    block := createDummyTreeData(1, h.Size(), true)[0]
+    n, err := NewNode(h, block)
+    assert.Nil(t, err)
+    assert.Equal(t, bytes.Equal(n.Hash, block), true)
+
+    // Any nil argument should return blank node, no error
+    n, err = NewNode(nil, nil)
+    assert.Nil(t, err)
     assert.Nil(t, n.Hash, nil)
+    n, err = NewNode(nil, block)
+    assert.Nil(t, err)
+    assert.Nil(t, n.Hash, nil)
+    n, err = NewNode(h, nil)
+    assert.Nil(t, err)
+    assert.Nil(t, n.Hash, nil)
+
+    // Check hash error handling
+    h = NewFailingHash()
+    n, err = NewNode(h, block)
+    assert.NotNil(t, err)
+    assert.Equal(t, err.Error(), "Failed to write hash")
 }
 
 func TestNewTree(t *testing.T) {
@@ -377,14 +401,8 @@ func TestTreeUngenerated(t *testing.T) {
     tree := Tree{}
     // If data is nil, it should handle that:
     err := tree.Generate(nil, NewSimpleHash())
-    if err == nil {
-        t.Log("tree.Generate() expected error for nil data")
-        t.FailNow()
-    }
-    if err.Error() != "Blocks must be non-nil" {
-        t.Errorf("tree.Generate() failed with wrong error for nil blocks: %v",
-            err)
-    }
+    assert.NotNil(t, err)
+    assert.Equal(t, err.Error(), "Blocks must be non-nil")
     assert.Nil(t, tree.Leaves())
     assert.Nil(t, tree.Root())
     assert.Nil(t, tree.Nodes)
@@ -399,10 +417,7 @@ func TestTreeGenerate(t *testing.T) {
 
     // Generate the tree
     err := tree.Generate(data, NewSimpleHash())
-    if err != nil {
-        t.Logf("tree.Generate error: %v", err)
-        t.FailNow()
-    }
+    assert.Nil(t, err)
     verifyGeneratedTree(t, &tree)
 
     // Generating with no blocks should return error
@@ -431,8 +446,9 @@ func TestGetNodesAtHeight(t *testing.T) {
     tree := NewTree()
     assert.Nil(t, tree.GetNodesAtHeight(1))
 
-    data := createDummyTreeData(16, 1, true)
-    t.Logf("Data: %v\n", data)
+    count := 15
+    size := 16
+    data := createDummyTreeData(count, size, true)
     tree.Generate(data, NewSimpleHash())
     verifyGeneratedTree(t, &tree)
 
@@ -442,8 +458,8 @@ func TestGetNodesAtHeight(t *testing.T) {
 
     // check valid height = 1
     nodes := tree.GetNodesAtHeight(tree.Height())
-    assert.Equal(t, len(nodes), 16)
-    expect := tree.Nodes[:16]
+    assert.Equal(t, len(nodes), count)
+    expect := tree.Nodes[:count]
     for i := 0; i < len(nodes); i++ {
         assert.Equal(t, &expect[i], &nodes[i])
     }

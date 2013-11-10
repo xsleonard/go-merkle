@@ -7,7 +7,6 @@ package merkle
 
 import (
     "errors"
-    "fmt"
     "hash"
 )
 
@@ -17,12 +16,16 @@ type Node struct {
     Right *Node
 }
 
-func NewNode(h hash.Hash) Node {
-    var b []byte = nil
-    if h != nil {
-        b = h.Sum(make([]byte, h.Size()))
+func NewNode(h hash.Hash, block []byte) (Node, error) {
+    if h == nil || block == nil {
+        return Node{}, nil
     }
-    return Node{Hash: b}
+    defer h.Reset()
+    _, err := h.Write(block[:])
+    if err != nil {
+        return Node{}, err
+    }
+    return Node{Hash: h.Sum(nil)}, nil
 }
 
 type Tree struct {
@@ -83,8 +86,6 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
     node_count := CalculateNodeCount(leaf_count)
     height := CalculateTreeHeight(node_count)
     true_node_count := CalculateUnbalancedNodeCount(height, block_count)
-    // fmt.Printf("Node count: %d\n", node_count)
-    // fmt.Printf("True node count: %d\n", true_node_count)
     if height == 0 {
         return errors.New("Empty tree")
     }
@@ -94,7 +95,7 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 
     // Create the leaf nodes
     for _, block := range blocks {
-        node, err := self.createNode(hashf, block)
+        node, err := NewNode(hashf, block)
         if err != nil {
             return err
         }
@@ -123,23 +124,12 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
     return nil
 }
 
-func (self *Tree) createNode(h hash.Hash, block []byte) (Node, error) {
-    /* Creates a new Node with a Hash of block []byte and adds it to the
-       node array */
-    fmt.Printf("Block: %v\n", block)
-    defer h.Reset()
-    _, err := h.Write(block)
-    if err != nil {
-        return NewNode(nil), err
-    }
-    return NewNode(h), nil
-}
-
 func (self *Tree) generateNodeLevel(below []Node, current []Node, h hash.Hash) ([]Node, error) {
     /* Creates all the non-leaf nodes for a certain height. The number of nodes
        is calculated to be 1/2 the number of nodes in the lower rung.  The newly
        created nodes will reference their Left and Right children */
-    data := make([]byte, 0, h.Size()*2)
+    size := h.Size()
+    data := make([]byte, size*2)
     end := (len(below) + (len(below) % 2)) / 2
     for i := 0; i < end; i++ {
         // Concatenate the two children hashes and hash them, if both are
@@ -153,16 +143,14 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node, h hash.Hash) (
             right = &below[iright]
         }
         if right == nil {
-            b := make([]byte, len(left.Hash))
-            copy(b, left.Hash[:])
+            b := data[:size]
+            copy(b, left.Hash)
             node = Node{Hash: b}
         } else {
             var err error
-            copy(data, below[ileft].Hash[:])
-            fmt.Printf("Data1: %v\n", data)
-            copy(data, below[iright].Hash[:])
-            fmt.Printf("Data2: %v\n", data)
-            node, err = self.createNode(h, data)
+            copy(data[:size], below[ileft].Hash)
+            copy(data[size:], below[iright].Hash)
+            node, err = NewNode(h, data)
             if err != nil {
                 return nil, err
             }
