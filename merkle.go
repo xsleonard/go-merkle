@@ -12,7 +12,7 @@ Example use:
     import (
         "crypto/md5"
         "fmt"
-        "github.com/xsleonard/merkle"
+        "github.com/xsleonard/go-merkle"
         "io/ioutil"
     )
 
@@ -136,16 +136,16 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
         return errors.New("Blocks must be non-nil")
     }
 
-    block_count := uint64(len(blocks))
-    leaf_count := nextPowerOfTwo(block_count)
-    node_count := CalculateNodeCount(leaf_count)
-    height := CalculateTreeHeight(node_count)
-    true_node_count := CalculateUnbalancedNodeCount(height, block_count)
+    blockCount := uint64(len(blocks))
+    leafCount := nextPowerOfTwo(blockCount)
+    nodeCount := CalculateNodeCount(leafCount)
+    height := CalculateTreeHeight(nodeCount)
+    trueNodeCount := CalculateUnbalancedNodeCount(height, blockCount)
     if height == 0 {
         return errors.New("Empty tree")
     }
     levels := make([][]Node, height)
-    nodes := make([]Node, 0, true_node_count)
+    nodes := make([]Node, 0, trueNodeCount)
     leaves := nodes[0:0]
 
     // Create the leaf nodes
@@ -182,7 +182,8 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 // Creates all the non-leaf nodes for a certain height. The number of nodes
 // is calculated to be 1/2 the number of nodes in the lower rung.  The newly
 // created nodes will reference their Left and Right children
-func (self *Tree) generateNodeLevel(below []Node, current []Node, h hash.Hash) ([]Node, error) {
+func (self *Tree) generateNodeLevel(below []Node, current []Node,
+    h hash.Hash) ([]Node, error) {
     size := h.Size()
     data := make([]byte, size*2)
     end := (len(below) + (len(below) % 2)) / 2
@@ -241,21 +242,21 @@ func CalculateUnbalancedNodeCount(height uint64, size uint64) uint64 {
 
 // Returns the number of nodes in a Merkle tree given the number
 // of elements in the data the tree is based on
-func CalculateNodeCount(element_count uint64) uint64 {
+func CalculateNodeCount(elementCount uint64) uint64 {
     // Pad the count to the next highest multiple of 4
-    if element_count == 0 {
+    if elementCount == 0 {
         return 0
     }
-    element_count = nextPowerOfTwo(element_count)
+    elementCount = nextPowerOfTwo(elementCount)
     // "Full Binary Tree Theorem": The number of internal nodes is one less
     // than the number of leaf nodes.  In the Merkle tree, the number of leaf
     // nodes is equal to the number of elements to hash.
-    return 2*element_count - 1
+    return 2*elementCount - 1
 }
 
-// Returns the height of a full, complete binary tree given node_count nodes
-func CalculateTreeHeight(node_count uint64) uint64 {
-    return ceilLogBaseTwo(node_count)
+// Returns the height of a full, complete binary tree given nodeCount nodes
+func CalculateTreeHeight(nodeCount uint64) uint64 {
+    return ceilLogBaseTwo(nodeCount)
 }
 
 // Returns true if n is a power of 2
