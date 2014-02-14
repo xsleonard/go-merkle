@@ -15,7 +15,7 @@ package main
 import (
     "crypto/md5"
     "fmt"
-    "github.com/xsleonard/merkle"
+    "github.com/xsleonard/go-merkle"
     "io/ioutil"
 )
 
