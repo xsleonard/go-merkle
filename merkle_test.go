@@ -128,24 +128,32 @@ func failNotEqual(t *testing.T, label string, input interface{},
 func TestCalculateTreeHeight(t *testing.T) {
 	inputs := [][]uint64{
 		{0, 0},
-		{1, 1},
+		{1, 2},
 		{2, 2},
-		{3, 2},
+		{3, 3},
 		{4, 3},
-		{5, 3},
-		{6, 3},
-		{7, 3},
+		{5, 4},
+		{6, 4},
+		{7, 4},
 		{8, 4},
-		{15, 4},
-		{31, 5},
+		{9, 5},
+		{15, 5},
+		{16, 5},
+		{17, 6},
+		{31, 6},
 		{32, 6},
-		{63, 6},
+		{63, 7},
 		{64, 7},
+		{65, 8},
 	}
 	for _, i := range inputs {
-		r := CalculateTreeHeight(i[0])
+		r := calculateTreeHeight(i[0])
 		if r != i[1] {
-			failNotEqual(t, "CalculateTreeHeight", i[0], i[1], r)
+			failNotEqual(t, "calculateTreeHeight", i[0], i[1], r)
+		}
+		r, _ = CalculateHeightAndNodeCount(i[0])
+		if r != i[1] {
+			failNotEqual(t, "CalculateHeightAndNodeCount", i[0], i[1], r)
 		}
 	}
 }
@@ -170,7 +178,26 @@ func TestCeilLogBaseTwo(t *testing.T) {
 	}
 }
 
-func TestCalculateUnbalancedNodeCount(t *testing.T) {
+func TestLogBaseTwo(t *testing.T) {
+	inputs := [][]uint64{
+		{0, 0},
+		{1, 0},
+		{2, 1},
+		{4, 2},
+		{8, 3},
+		{16, 4},
+		{32, 5},
+		{64, 6},
+	}
+	for _, i := range inputs {
+		r := logBaseTwo(i[0])
+		if r != i[1] {
+			failNotEqual(t, "logBaseTwo", i[0], i[1], r)
+		}
+	}
+}
+
+func TestCalculateNodeCount(t *testing.T) {
 	inputs := [][]uint64{
 		{0, 0},
 		{1, 1},
@@ -181,43 +208,19 @@ func TestCalculateUnbalancedNodeCount(t *testing.T) {
 		{10, 21},
 		{11, 23},
 		{12, 24},
+		{13, 27},
 		{21, 44},
 		{22, 45},
 	}
 	for _, i := range inputs {
-		height := CalculateTreeHeight(CalculateNodeCount(i[0]))
-		r := CalculateUnbalancedNodeCount(height, i[0])
+		height := calculateTreeHeight(i[0])
+		r := calculateNodeCount(height, i[0])
 		if r != i[1] {
-			failNotEqual(t, "CalculateUnbalancedNodeCount", i[0], i[1], r)
+			failNotEqual(t, "calculateNodeCount", i[0], i[1], r)
 		}
-	}
-	// Powers of 2 should be the same result as CalculateNodeCount
-	var i uint64 = 1
-	for ; i < 32; i++ {
-		size := uint64(1 << i)
-		node_count := CalculateNodeCount(size)
-		h := CalculateTreeHeight(node_count)
-		assert.Equal(t, CalculateUnbalancedNodeCount(h, size), node_count)
-	}
-}
-
-func TestCalculateNodeCount(t *testing.T) {
-	inputs := [][]uint64{
-		{0, 0},
-		{1, 1},
-		{2, 3},
-		{4, 7},
-		{15, 31},
-		{16, 31},
-		{17, 63},
-		{65535, 131071},
-		{65536, 131071},
-		{65537, 262143},
-	}
-	for _, i := range inputs {
-		r := CalculateNodeCount(i[0])
+		_, r = CalculateHeightAndNodeCount(i[0])
 		if r != i[1] {
-			failNotEqual(t, "CalculateNodeCount", i[0], i[1], r)
+			failNotEqual(t, "CalculateHeightAndNodeCount", i[0], i[1], r)
 		}
 	}
 }
@@ -318,9 +321,7 @@ func verifyGeneratedTree(t *testing.T, tree *Tree) {
 		assert.Nil(t, n.Right)
 	}
 
-	height := tree.Height()
-	var i uint64 = height - 1
-	for ; i > 0; i-- {
+	for i := tree.Height() - 1; i > 0; i-- {
 		// All the other nodes should have children, and their children
 		// should be in the deeper level
 		deeper := tree.GetNodesAtHeight(i + 1)
@@ -350,16 +351,16 @@ func verifyGeneratedTree(t *testing.T, tree *Tree) {
 		assert.Equal(t, len(row), prev/2+prev%2)
 	}
 
-	root_row := tree.GetNodesAtHeight(1)
+	rootRow := tree.GetNodesAtHeight(1)
 	// The root row should exist
-	assert.NotNil(t, root_row)
+	assert.NotNil(t, rootRow)
 
 	// The root row should be of length 1
-	assert.Equal(t, len(root_row), 1,
+	assert.Equal(t, len(rootRow), 1,
 		"The root row should contain only 1 node")
 
 	// the Root() should be the only item in the top row
-	assert.Equal(t, tree.Root(), &root_row[0],
+	assert.Equal(t, tree.Root(), &rootRow[0],
 		"tree.Root() is not the expected node")
 
 	// The Leaves() should the deepest row
@@ -418,9 +419,9 @@ func TestTreeUngenerated(t *testing.T) {
 func TestTreeGenerate(t *testing.T) {
 	tree := Tree{}
 	// Setup some dummy data
-	block_count := 13
-	block_size := 16
-	data := createDummyTreeData(block_count, block_size, true)
+	blockCount := 13
+	blockSize := 16
+	data := createDummyTreeData(blockCount, blockSize, true)
 
 	// Generate the tree
 	err := tree.Generate(data, NewSimpleHash())
@@ -472,6 +473,61 @@ func TestGetNodesAtHeight(t *testing.T) {
 	}
 }
 
+// Returns the root hash for an array of hashes
+func simpleMerkle(data [][]byte) []byte {
+	h := sha256.New()
+	// Build the leaves
+	h0 := make([][]byte, len(data))
+	for i, b := range data {
+		h.Reset()
+		h.Write(b)
+		h0[i] = h.Sum(nil)
+	}
+
+	h1 := make([][]byte, (len(h0)+len(h0)%2)/2)
+	for {
+		for i := 0; i < len(h0); i += 2 {
+			var sum []byte
+			if len(h0)%2 == 1 && i == len(h0)-1 {
+				sum = h0[i]
+			} else {
+				c := append(h0[i], h0[i+1]...)
+				h.Reset()
+				h.Write(c)
+				sum = h.Sum(nil)
+			}
+			h1[i/2] = sum
+		}
+		if len(h1) == 1 {
+			break
+		}
+		h0 = h1
+		h1 = make([][]byte, (len(h0)+len(h0)%2)/2)
+	}
+	return h1[0]
+}
+
+func TestRootHashValue(t *testing.T) {
+	// Check the root hash made by Tree against a simpler implementation
+	// that finds only the root hash
+
+	tree := Tree{}
+	// Setup some dummy data
+	blockCount := 16
+	blockSize := 16
+	data := createDummyTreeData(blockCount, blockSize, true)
+
+	// Generate the tree
+	err := tree.Generate(data, sha256.New())
+	assert.Nil(t, err)
+	verifyGeneratedTree(t, &tree)
+
+	// Calculate the root hash with the simpler method
+	merk := simpleMerkle(data)
+
+	assert.Equal(t, bytes.Equal(tree.Root().Hash, merk), true)
+}
+
 /* Benchmarks */
 
 func generateBenchmark(b *testing.B, data [][]byte, hashf hash.Hash) {
@@ -501,28 +557,28 @@ func BenchmarkGenerate_1M_Blocks_NoHash(b *testing.B) {
 
 func BenchmarkGenerate_512MB_512KB_MD5(b *testing.B) {
 	mb := 512
-	block_size := 512 * 1024
-	data := createDummyTreeData((mb*1024*1024)/block_size, block_size, false)
+	blockSize := 512 * 1024
+	data := createDummyTreeData((mb*1024*1024)/blockSize, blockSize, false)
 	generateBenchmark(b, data, md5.New())
 }
 
 func BenchmarkGenerate_512MB_512KB_SHA256(b *testing.B) {
 	mb := 512
-	block_size := 512 * 1024
-	data := createDummyTreeData((mb*1024*1024)/block_size, block_size, false)
+	blockSize := 512 * 1024
+	data := createDummyTreeData((mb*1024*1024)/blockSize, blockSize, false)
 	generateBenchmark(b, data, sha256.New())
 }
 
 func BenchmarkGenerate_1GB_2MB_MD5(b *testing.B) {
 	mb := 1024
-	block_size := 2 * 1024 * 1024
-	data := createDummyTreeData((mb*1024*1024)/block_size, block_size, false)
+	blockSize := 2 * 1024 * 1024
+	data := createDummyTreeData((mb*1024*1024)/blockSize, blockSize, false)
 	generateBenchmark(b, data, md5.New())
 }
 
 func BenchmarkGenerate_1GB_2MB_SHA256(b *testing.B) {
 	mb := 1024
-	block_size := 2 * 1024 * 1024
-	data := createDummyTreeData((mb*1024*1024)/block_size, block_size, false)
+	blockSize := 2 * 1024 * 1024
+	data := createDummyTreeData((mb*1024*1024)/blockSize, blockSize, false)
 	generateBenchmark(b, data, sha256.New())
 }

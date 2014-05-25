@@ -132,38 +132,31 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 	if blockCount == 0 {
 		return errors.New("Empty tree")
 	}
-	leafCount := nextPowerOfTwo(blockCount)
-	nodeCount := CalculateNodeCount(leafCount)
-	height := CalculateTreeHeight(nodeCount)
-	trueNodeCount := CalculateUnbalancedNodeCount(height, blockCount)
+	height, nodeCount := CalculateHeightAndNodeCount(blockCount)
 	levels := make([][]Node, height)
-	nodes := make([]Node, 0, trueNodeCount)
-	leaves := nodes[0:0]
+	nodes := make([]Node, nodeCount)
 
 	// Create the leaf nodes
-	for _, block := range blocks {
+	for i, block := range blocks {
 		node, err := NewNode(hashf, block)
 		if err != nil {
 			return err
 		}
-		leaves = append(leaves, node)
+		nodes[i] = node
 	}
-	nodes = leaves[:]
-	levels[height-1] = leaves[:]
+	levels[height-1] = nodes[:len(blocks)]
 
 	// Create each node level
-	if height > 1 {
-		h := height - 1
-		for ; h > 0; h-- {
-			below := levels[h]
-			current := nodes[len(nodes):len(nodes)]
-			current, err := self.generateNodeLevel(below, current, hashf)
-			if err != nil {
-				return err
-			}
-			levels[h-1] = current[:]
-			nodes = nodes[:len(nodes)+len(current)]
+	current := nodes[len(blocks):]
+	h := height - 1
+	for ; h > 0; h-- {
+		below := levels[h]
+		wrote, err := self.generateNodeLevel(below, current, hashf)
+		if err != nil {
+			return err
 		}
+		levels[h-1] = current[:wrote]
+		current = current[wrote:]
 	}
 
 	self.Nodes = nodes
@@ -173,9 +166,11 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 
 // Creates all the non-leaf nodes for a certain height. The number of nodes
 // is calculated to be 1/2 the number of nodes in the lower rung.  The newly
-// created nodes will reference their Left and Right children
+// created nodes will reference their Left and Right children.
+// Returns the number of nodes added to current
 func (self *Tree) generateNodeLevel(below []Node, current []Node,
-	h hash.Hash) ([]Node, error) {
+	h hash.Hash) (uint64, error) {
+	h.Reset()
 	size := h.Size()
 	data := make([]byte, size*2)
 	end := (len(below) + (len(below) % 2)) / 2
@@ -195,31 +190,39 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node,
 			copy(b, left.Hash)
 			node = Node{Hash: b}
 		} else {
-			var err error
 			copy(data[:size], below[ileft].Hash)
 			copy(data[size:], below[iright].Hash)
+			var err error
 			node, err = NewNode(h, data)
 			if err != nil {
-				return nil, err
+				return 0, err
 			}
 		}
 		// Point the new node to its children and save
 		node.Left = left
 		node.Right = right
-		current = append(current, node)
+		current[i] = node
 
 		// Reset the data slice
 		data = data[:]
 	}
-	return current, nil
+	return uint64(end), nil
+}
+
+// Returns the height and number of nodes in an unbalanced binary tree given
+// number of leaves
+func CalculateHeightAndNodeCount(leaves uint64) (height, nodeCount uint64) {
+	height = calculateTreeHeight(leaves)
+	nodeCount = calculateNodeCount(height, leaves)
+	return
 }
 
 // Calculates the number of nodes in a binary tree unbalanced strictly on
 // the right side.  Height is assumed to be equal to
-// CalculateTreeHeight(CalculateNodeCount(size))
-func CalculateUnbalancedNodeCount(height uint64, size uint64) uint64 {
+// calculateTreeHeight(size)
+func calculateNodeCount(height, size uint64) uint64 {
 	if isPowerOfTwo(size) {
-		return CalculateNodeCount(size)
+		return 2*size - 1
 	}
 	count := size
 	prev := size
@@ -232,23 +235,15 @@ func CalculateUnbalancedNodeCount(height uint64, size uint64) uint64 {
 	return count
 }
 
-// Returns the number of nodes in a Merkle tree given the number
-// of elements in the data the tree is based on
-func CalculateNodeCount(elementCount uint64) uint64 {
-	// Pad the count to the next highest multiple of 4
-	if elementCount == 0 {
-		return 0
-	}
-	elementCount = nextPowerOfTwo(elementCount)
-	// "Full Binary Tree Theorem": The number of internal nodes is one less
-	// than the number of leaf nodes.  In the Merkle tree, the number of leaf
-	// nodes is equal to the number of elements to hash.
-	return 2*elementCount - 1
-}
-
 // Returns the height of a full, complete binary tree given nodeCount nodes
-func CalculateTreeHeight(nodeCount uint64) uint64 {
-	return ceilLogBaseTwo(nodeCount + 1)
+func calculateTreeHeight(nodeCount uint64) uint64 {
+	if nodeCount == 0 {
+		return 0
+	} else if nodeCount == 1 {
+		return 2
+	} else {
+		return logBaseTwo(nextPowerOfTwo(nodeCount)) + 1
+	}
 }
 
 // Returns true if n is a power of 2
@@ -285,7 +280,20 @@ var log2lookup []uint64 = []uint64{
 	0x0000000000000002,
 }
 
-// Returns the log2 value of n
+// Returns log2(n) assuming n is a power of 2
+func logBaseTwo(x uint64) uint64 {
+	if x == 0 {
+		return 0
+	}
+	ct := uint64(0)
+	for x != 0 {
+		x >>= 1
+		ct += 1
+	}
+	return ct - 1
+}
+
+// Returns the ceil'd log2 value of n
 // See: http://stackoverflow.com/a/15327567
 func ceilLogBaseTwo(x uint64) uint64 {
 	y := uint64(1)
