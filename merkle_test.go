@@ -307,6 +307,16 @@ func createDummyTreeData(count, size int, use_rand bool) [][]byte {
 	return data
 }
 
+func randomByteArray(size int) []byte {
+	garbage := make([]byte, size)
+	read := 0
+	for read < size {
+		n, _ := rand.Read(garbage[read:])
+		read += n
+	}
+	return garbage
+}
+
 func verifyGeneratedTree(t *testing.T, tree *Tree, h hash.Hash) {
 	/* Given a generated tree, confirm its state is correct */
 
@@ -460,24 +470,34 @@ func TestGenerateNode(t *testing.T) {
 	h := NewSimpleHash()
 
 	//Verify last Node's Hash of unbalance should be same as leaf
-	sampleLeft := []byte{}
+	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
 	n, err := tree.generateNode(sampleLeft, nil, h)
 	assert.Nil(t, err)
 	assert.Equal(t, sampleLeft, n.Hash)
 
 	//Verify node hash in lexicographical order
-	sampleRight := []byte{}
-	nodeHash := []byte{}
+	sampleRight := []byte{193, 201, 112, 48, 157, 84, 238, 81, 120, 81, 228, 112, 38, 213, 168, 50, 37, 170, 137, 211, 44, 177, 75, 68, 152, 252, 54, 145, 145, 146, 154, 136}
+
+	data := make([]byte, h.Size()*2)
+	copy(data[:h.Size()], sampleRight)
+	copy(data[h.Size():], sampleLeft)
+
+	expected, _ := NewNode(h, data)
 	n, err = tree.generateNode(sampleLeft, sampleRight, h)
 	assert.Nil(t, err)
-	assert.Equal(t, nodeHash, n.Hash)
+	assert.Equal(t, expected.Hash, n.Hash)
+
+	data = data[:]
 
 	//Verify node hash in left-right order
 	tree = Tree{}
-	nodeHash = []byte{}
+	copy(data[:h.Size()], sampleRight)
+	copy(data[h.Size():], sampleLeft)
+
+	expected, _ = NewNode(h, data)
 	n, err = tree.generateNode(sampleLeft, sampleRight, h)
 	assert.Nil(t, err)
-	assert.Equal(t, nodeHash, n.Hash)
+	assert.Equal(t, expected.Hash, n.Hash)
 }
 
 func TestHashOrderedTreeGenerate(t *testing.T) {
