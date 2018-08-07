@@ -58,7 +58,13 @@ package merkle
 import (
 	"errors"
 	"hash"
+	"bytes"
 )
+
+// Options that holds behavior changes
+type TreeOptions struct {
+	EnableHashSorting bool
+}
 
 // A node in the merkle tree
 type Node struct {
@@ -86,6 +92,14 @@ type Tree struct {
 	Nodes []Node
 	// Points to each level in the node. The first level contains the root node
 	Levels [][]Node
+	// Any particular behavior changing option
+	Options TreeOptions
+}
+
+func NewTreeWithOpts(options TreeOptions) Tree {
+	tree := NewTree()
+	tree.Options = options
+	return tree
 }
 
 func NewTree() Tree {
@@ -171,8 +185,7 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 func (self *Tree) generateNodeLevel(below []Node, current []Node,
 	h hash.Hash) (uint64, error) {
 	h.Reset()
-	size := h.Size()
-	data := make([]byte, size*2)
+
 	end := (len(below) + (len(below) % 2)) / 2
 	for i := 0; i < end; i++ {
 		// Concatenate the two children hashes and hash them, if both are
@@ -182,31 +195,43 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node,
 		iright := 2*i + 1
 		left := &below[ileft]
 		var right *Node = nil
+		var rightHash []byte
 		if len(below) > iright {
 			right = &below[iright]
+			rightHash = right.Hash
 		}
-		if right == nil {
-			b := data[:size]
-			copy(b, left.Hash)
-			node = Node{Hash: b}
-		} else {
-			copy(data[:size], below[ileft].Hash)
-			copy(data[size:], below[iright].Hash)
-			var err error
-			node, err = NewNode(h, data)
-			if err != nil {
-				return 0, err
-			}
+		node, err := self.generateNode(below[ileft].Hash, rightHash, h)
+		if err != nil {
+			return 0, err
 		}
 		// Point the new node to its children and save
 		node.Left = left
 		node.Right = right
 		current[i] = node
 
-		// Reset the data slice
-		data = data[:]
 	}
 	return uint64(end), nil
+}
+
+func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
+	data := make([]byte, h.Size()*2)
+	bottomHash := left
+	topHash := right
+	if right == nil {
+		b := data[:h.Size()]
+		copy(b, left)
+		return Node{Hash: b}, nil
+	}
+	if self.Options.EnableHashSorting {
+		if bytes.Compare(left, right) > 0 {
+			bottomHash = right
+			topHash = left
+		}
+	}
+	copy(data[:h.Size()], bottomHash)
+	copy(data[h.Size():], topHash)
+
+	return NewNode(h, data)
 }
 
 // Returns the height and number of nodes in an unbalanced binary tree given

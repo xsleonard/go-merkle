@@ -307,7 +307,7 @@ func createDummyTreeData(count, size int, use_rand bool) [][]byte {
 	return data
 }
 
-func verifyGeneratedTree(t *testing.T, tree *Tree) {
+func verifyGeneratedTree(t *testing.T, tree *Tree, h hash.Hash) {
 	/* Given a generated tree, confirm its state is correct */
 
 	// Nodes should have been created
@@ -343,6 +343,7 @@ func verifyGeneratedTree(t *testing.T, tree *Tree) {
 					"Right child hash should not equal node hash")
 				assert.NotEqual(t, bytes.Equal(n.Left.Hash, n.Hash), true,
 					"Left child hash should not equal node hash")
+				verifyHashInNode(t, tree, n, h)
 			}
 		}
 
@@ -363,10 +364,21 @@ func verifyGeneratedTree(t *testing.T, tree *Tree) {
 	assert.Equal(t, tree.Root(), &rootRow[0],
 		"tree.Root() is not the expected node")
 
+	// Verify Root Hash
+	verifyHashInNode(t, tree, *tree.Root(), h)
+
 	// The Leaves() should the deepest row
 	assert.Equal(t, len(tree.Leaves()),
 		len(tree.GetNodesAtHeight(tree.Height())),
 		"tree.Leaves() is not the expected row")
+}
+
+func verifyHashInNode(t *testing.T, tree *Tree, n Node, h hash.Hash) {
+	/* Given a node it verifies that the Node Hash was calculated correctly */
+	nn, err := tree.generateNode(n.Left.Hash, n.Right.Hash, h)
+
+	assert.Nil(t, err)
+	assert.Equal(t, nn.Hash, n.Hash, "calculated Hash needs to match generated one")
 }
 
 func verifyInitialState(t *testing.T, tree *Tree) {
@@ -402,6 +414,13 @@ func TestNewNode(t *testing.T) {
 func TestNewTree(t *testing.T) {
 	tree := NewTree()
 	verifyInitialState(t, &tree)
+	assert.False(t, tree.Options.EnableHashSorting)
+}
+
+func TestNewTreeWithOpts(t *testing.T) {
+	tree := NewTreeWithOpts(TreeOptions{EnableHashSorting: true})
+	verifyInitialState(t, &tree)
+	assert.True(t, tree.Options.EnableHashSorting)
 }
 
 func TestTreeUngenerated(t *testing.T) {
@@ -418,15 +437,63 @@ func TestTreeUngenerated(t *testing.T) {
 
 func TestTreeGenerate(t *testing.T) {
 	tree := Tree{}
+	h := NewSimpleHash()
 	// Setup some dummy data
 	blockCount := 13
 	blockSize := 16
 	data := createDummyTreeData(blockCount, blockSize, true)
 
 	// Generate the tree
-	err := tree.Generate(data, NewSimpleHash())
+	err := tree.Generate(data, h)
 	assert.Nil(t, err)
-	verifyGeneratedTree(t, &tree)
+	verifyGeneratedTree(t, &tree, h)
+
+	// Generating with no blocks should return error
+	err = tree.Generate(make([][]byte, 0, 1), h)
+	assert.NotNil(t, err)
+	assert.Equal(t, err.Error(), "Empty tree")
+}
+
+func TestGenerateNode(t *testing.T) {
+	tree := Tree{}
+	tree.Options.EnableHashSorting = true
+	h := NewSimpleHash()
+
+	//Verify last Node's Hash of unbalance should be same as leaf
+	sampleLeft := []byte{}
+	n, err := tree.generateNode(sampleLeft, nil, h)
+	assert.Nil(t, err)
+	assert.Equal(t, sampleLeft, n.Hash)
+
+	//Verify node hash in lexicographical order
+	sampleRight := []byte{}
+	nodeHash := []byte{}
+	n, err = tree.generateNode(sampleLeft, sampleRight, h)
+	assert.Nil(t, err)
+	assert.Equal(t, nodeHash, n.Hash)
+
+	//Verify node hash in left-right order
+	tree = Tree{}
+	nodeHash = []byte{}
+	n, err = tree.generateNode(sampleLeft, sampleRight, h)
+	assert.Nil(t, err)
+	assert.Equal(t, nodeHash, n.Hash)
+}
+
+func TestHashOrderedTreeGenerate(t *testing.T) {
+	tree := Tree{}
+	tree.Options.EnableHashSorting = true
+	h := NewSimpleHash()
+
+	// Setup some dummy data
+	blockCount := 13
+	blockSize := 16
+	data := createDummyTreeData(blockCount, blockSize, true)
+
+	// Generate the tree
+	err := tree.Generate(data, h)
+	assert.Nil(t, err)
+	verifyGeneratedTree(t, &tree, h)
 
 	// Generating with no blocks should return error
 	err = tree.Generate(make([][]byte, 0, 1), NewSimpleHash())
@@ -452,13 +519,14 @@ func TestGenerateFailedHash(t *testing.T) {
 func TestGetNodesAtHeight(t *testing.T) {
 	// ungenerate tree should return nil
 	tree := NewTree()
+	h := NewSimpleHash()
 	assert.Nil(t, tree.GetNodesAtHeight(1))
 
 	count := 15
 	size := 16
 	data := createDummyTreeData(count, size, true)
 	tree.Generate(data, NewSimpleHash())
-	verifyGeneratedTree(t, &tree)
+	verifyGeneratedTree(t, &tree, h)
 
 	// invalid height should return nil
 	assert.Nil(t, tree.GetNodesAtHeight(0))
@@ -512,15 +580,16 @@ func TestRootHashValue(t *testing.T) {
 	// that finds only the root hash
 
 	tree := Tree{}
+	h := sha256.New()
 	// Setup some dummy data
 	blockCount := 16
 	blockSize := 16
 	data := createDummyTreeData(blockCount, blockSize, true)
 
 	// Generate the tree
-	err := tree.Generate(data, sha256.New())
+	err := tree.Generate(data, h)
 	assert.Nil(t, err)
-	verifyGeneratedTree(t, &tree)
+	verifyGeneratedTree(t, &tree, h)
 
 	// Calculate the root hash with the simpler method
 	merk := simpleMerkle(data)
