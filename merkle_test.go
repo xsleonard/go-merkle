@@ -307,16 +307,6 @@ func createDummyTreeData(count, size int, use_rand bool) [][]byte {
 	return data
 }
 
-func randomByteArray(size int) []byte {
-	garbage := make([]byte, size)
-	read := 0
-	for read < size {
-		n, _ := rand.Read(garbage[read:])
-		read += n
-	}
-	return garbage
-}
-
 func verifyGeneratedTree(t *testing.T, tree *Tree, h hash.Hash) {
 	/* Given a generated tree, confirm its state is correct */
 
