@@ -41,6 +41,8 @@ Example use:
 
         // Create & generate the tree
         tree := merkle.NewTree()
+				// Create & generate the tree with sorted hashes
+    		//tree := merkle.NewTreeWithOpts(TreeOptions{EnableHashSorting: true})
         err = tree.Generate(blocks, md5.New())
         if err != nil {
             fmt.Println(err)
