@@ -192,7 +192,6 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node,
 	for i := 0; i < end; i++ {
 		// Concatenate the two children hashes and hash them, if both are
 		// available, otherwise reuse the hash from the lone left node
-		node := Node{}
 		ileft := 2 * i
 		iright := 2*i + 1
 		left := &below[ileft]
