@@ -45,6 +45,7 @@ func main() {
     // Create & generate the tree
     tree := merkle.NewTree()
     // Create & generate the tree with sorted hashes
+    // A tree with pair wise sorted hashes allows for a representation of proofs which are more space efficient
     //tree := merkle.NewTreeWithOpts(TreeOptions{EnableHashSorting: true})
     err = tree.Generate(blocks, md5.New())
     if err != nil {
