@@ -454,18 +454,23 @@ func TestTreeGenerate(t *testing.T) {
 	assert.Equal(t, err.Error(), "Empty tree")
 }
 
-func TestGenerateNode(t *testing.T) {
+func TestGenerateNodeHashOfUnbalance(t *testing.T) {
 	tree := Tree{}
 	tree.Options.EnableHashSorting = true
 	h := NewSimpleHash()
 
-	//Verify last Node's Hash of unbalance should be same as leaf
 	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
 	n, err := tree.generateNode(sampleLeft, nil, h)
 	assert.Nil(t, err)
 	assert.Equal(t, sampleLeft, n.Hash)
+}
 
-	//Verify node hash in lexicographical order
+func TestGenerateNodeHashOrdered(t *testing.T) {
+	tree := Tree{}
+	tree.Options.EnableHashSorting = true
+	h := NewSimpleHash()
+
+	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
 	sampleRight := []byte{193, 201, 112, 48, 157, 84, 238, 81, 120, 81, 228, 112, 38, 213, 168, 50, 37, 170, 137, 211, 44, 177, 75, 68, 152, 252, 54, 145, 145, 146, 154, 136}
 
 	data := make([]byte, h.Size()*2)
@@ -473,19 +478,23 @@ func TestGenerateNode(t *testing.T) {
 	copy(data[h.Size():], sampleLeft)
 
 	expected, _ := NewNode(h, data)
-	n, err = tree.generateNode(sampleLeft, sampleRight, h)
+	n, err := tree.generateNode(sampleLeft, sampleRight, h)
 	assert.Nil(t, err)
 	assert.Equal(t, expected.Hash, n.Hash)
+}
 
-	data = data[:]
+func TestGenerateNodeHashStandard(t *testing.T) {
+	tree := Tree{}
+	h := NewSimpleHash()
+	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
+	sampleRight := []byte{193, 201, 112, 48, 157, 84, 238, 81, 120, 81, 228, 112, 38, 213, 168, 50, 37, 170, 137, 211, 44, 177, 75, 68, 152, 252, 54, 145, 145, 146, 154, 136}
 
-	//Verify node hash in left-right order
-	tree = Tree{}
+	data := make([]byte, h.Size()*2)
 	copy(data[:h.Size()], sampleRight)
 	copy(data[h.Size():], sampleLeft)
 
-	expected, _ = NewNode(h, data)
-	n, err = tree.generateNode(sampleLeft, sampleRight, h)
+	expected, _ := NewNode(h, data)
+	n, err := tree.generateNode(sampleLeft, sampleRight, h)
 	assert.Nil(t, err)
 	assert.Equal(t, expected.Hash, n.Hash)
 }

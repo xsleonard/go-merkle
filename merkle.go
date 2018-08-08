@@ -41,7 +41,8 @@ Example use:
 
         // Create & generate the tree
         tree := merkle.NewTree()
-				// Create & generate the tree with sorted hashes
+				// Create & generate the tree with sorted hashes.
+				// A tree with pair wise sorted hashes allows for a representation of proofs which are more space efficient
     		//tree := merkle.NewTreeWithOpts(TreeOptions{EnableHashSorting: true})
         err = tree.Generate(blocks, md5.New())
         if err != nil {
@@ -216,21 +217,19 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node,
 
 func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
 	data := make([]byte, h.Size()*2)
-	bottomHash := left
-	topHash := right
 	if right == nil {
 		b := data[:h.Size()]
 		copy(b, left)
 		return Node{Hash: b}, nil
 	}
-	if self.Options.EnableHashSorting {
-		if bytes.Compare(left, right) > 0 {
-			bottomHash = right
-			topHash = left
-		}
+	firstHalf := left
+	secondHalf := right
+	if self.Options.EnableHashSorting && bytes.Compare(left, right) > 0 {
+		firstHalf = right
+		secondHalf = left
 	}
-	copy(data[:h.Size()], bottomHash)
-	copy(data[h.Size():], topHash)
+	copy(data[:h.Size()], firstHalf)
+	copy(data[h.Size():], secondHalf)
 
 	return NewNode(h, data)
 }
