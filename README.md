@@ -3,7 +3,7 @@ go-merkle
 
 A fixed Merkle Tree implementation in Go
 
-[![Build Status](https://drone.io/github.com/xsleonard/go-merkle/status.png)](https://drone.io/github.com/xsleonard/go-merkle/latest)
+[![Build Status](https://travis-ci.com/xsleonard/go-merkle.svg?branch=master)](https://travis-ci.com/xsleonard/go-merkle)
 [![Coverage Status](https://coveralls.io/repos/xsleonard/go-merkle/badge.png?branch=master)](https://coveralls.io/r/xsleonard/go-merkle?branch=master)
 
 Example Use
