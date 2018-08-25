@@ -476,10 +476,6 @@ func TestTreeGenerate_DisableHashLeaves(t *testing.T) {
 	assert.Equal(t, tree.Root().Hash, treeHashedLeaves.Root().Hash)
 }
 
-func TestTreeGenerate_DisableHashLeaves_IncorrectLength(t *testing.T) {
-	return //	tree := NewTreeWithOpts(TreeOptions{false, true})
-}
-
 func TestGenerateNodeHashOfUnbalance(t *testing.T) {
 	tree := Tree{}
 	tree.Options.EnableHashSorting = true
