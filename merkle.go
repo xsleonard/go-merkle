@@ -3,82 +3,42 @@ Use of this source code is governed by the MIT license that can be found
 in the LICENSE file.
 */
 
-/* A fixed merkle tree implementation
-
-Example use:
-
-    package main
-
-    import (
-        "crypto/md5"
-        "fmt"
-        "github.com/xsleonard/go-merkle"
-        "io/ioutil"
-    )
-
-    func splitData(data []byte, size int) [][]byte {
-        // Splits data into an array of slices of len(size)
-        count := len(data) / size
-        blocks := make([][]byte, 0, count)
-        for i := 0; i < count; i++ {
-            block := data[i*size : (i+1)*size]
-            blocks = append(blocks, block)
-        }
-        if len(data)%size != 0 {
-            blocks = append(blocks, data[len(blocks)*size:])
-        }
-        return blocks
-    }
-
-    func main() {
-        // Grab some data to make the tree out of, and partition
-        data, err := ioutil.ReadFile("testdata") // assume testdata exists
-        if err != nil {
-            fmt.Println(err)
-            return
-        }
-        blocks := splitData(data, 32)
-
-        // Create & generate the tree
-        tree := merkle.NewTree()
-				// Create & generate the tree with sorted hashes.
-				// A tree with pair wise sorted hashes allows for a representation of proofs which are more space efficient
-    		//tree := merkle.NewTreeWithOpts(TreeOptions{EnableHashSorting: true})
-        err = tree.Generate(blocks, md5.New())
-        if err != nil {
-            fmt.Println(err)
-            return
-        }
-
-        fmt.Printf("Height: %d\n", tree.Height())
-        fmt.Printf("Root: %v\n", tree.Root())
-        fmt.Printf("N Leaves: %v\n", len(tree.Leaves()))
-        fmt.Printf("Height 2: %v\n", tree.GetNodesAtHeight(2))
-    }
-*/
+/* Package merkle is a fixed merkle tree implementation */
 package merkle
 
 import (
+	"bytes"
 	"errors"
 	"hash"
-	"bytes"
 )
 
-// Options that holds behavior changes
+// TreeOptions configures tree behavior
 type TreeOptions struct {
+	// EnableHashSorting modifies the tree's hash behavior to sort the hashes before concatenating them
+	// to calculate the parent hash. This removes the capability of proving the position in the tree but
+	// simplifies the proof format by removing the need to specify left/right.
 	EnableHashSorting bool
+
+	// DisableHashLeaves determines whether leaf nodes should be hashed or not. By doing disabling this behavior,
+	// you can use a different hash function for leaves or generate a tree that contains already hashed
+	// values. If this is disabled, a length of 32 bytes is enforced for all leaves.
+	DisableHashLeaves bool
 }
 
-// A node in the merkle tree
+// Node in the merkle tree
 type Node struct {
 	Hash  []byte
 	Left  *Node
 	Right *Node
 }
 
-// Creates a node given a hash function and data to hash
+// NewNode creates a node given a hash function and data to hash. If the hash function is nil, the data
+// will be added without being hashed.
 func NewNode(h hash.Hash, block []byte) (Node, error) {
-	if h == nil || block == nil {
+	if h == nil {
+		return Node{Hash: block}, nil
+	}
+	if block == nil {
 		return Node{}, nil
 	}
 	defer h.Reset()
@@ -89,7 +49,7 @@ func NewNode(h hash.Hash, block []byte) (Node, error) {
 	return Node{Hash: h.Sum(nil)}, nil
 }
 
-// Contains all nodes
+// Tree contains all nodes
 type Tree struct {
 	// All nodes, linear
 	Nodes []Node
@@ -155,7 +115,13 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 
 	// Create the leaf nodes
 	for i, block := range blocks {
-		node, err := NewNode(hashf, block)
+		var node Node
+		var err error
+		if self.Options.DisableHashLeaves {
+			node, err = NewNode(nil, block)
+		} else {
+			node, err = NewNode(hashf, block)
+		}
 		if err != nil {
 			return err
 		}
