@@ -230,8 +230,6 @@ func calculateNodeCount(height, size uint64) uint64 {
 func calculateTreeHeight(nodeCount uint64) uint64 {
 	if nodeCount == 0 {
 		return 0
-	} else if nodeCount == 1 {
-		return 2
 	} else {
 		return logBaseTwo(nextPowerOfTwo(nodeCount)) + 1
 	}

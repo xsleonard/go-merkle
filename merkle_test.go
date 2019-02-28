@@ -129,7 +129,7 @@ func failNotEqual(t *testing.T, label string, input interface{},
 func TestCalculateTreeHeight(t *testing.T) {
 	inputs := [][]uint64{
 		{0, 0},
-		{1, 2},
+		{1, 1},
 		{2, 2},
 		{3, 3},
 		{4, 3},
@@ -457,6 +457,20 @@ func TestTreeGenerate(t *testing.T) {
 	err = tree.Generate(make([][]byte, 0, 1), h)
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Empty tree")
+}
+
+func TestTree_GenerateSingleLeaf(t *testing.T) {
+	h := sha256.New()
+	items := [][]byte{[]byte("alpha")}
+
+	treeHashedLeaves := NewTree()
+	err := treeHashedLeaves.Generate(items, h)
+	assert.Nil(t, err)
+
+	assert.Len(t, treeHashedLeaves.Nodes, 1)
+
+	calcHash := []byte{0x8e, 0xd3, 0xf6, 0xad, 0x68, 0x5b, 0x95, 0x9e, 0xad, 0x70, 0x22, 0x51, 0x8e, 0x1a, 0xf7, 0x6c, 0xd8, 0x16, 0xf8, 0xe8, 0xec, 0x7c, 0xcd, 0xda, 0x1e, 0xd4, 0x1, 0x8e, 0x8f, 0x22, 0x23, 0xf8}
+	assert.Equal(t, calcHash, treeHashedLeaves.Root().Hash)
 }
 
 func TestTreeGenerate_DisableHashLeaves(t *testing.T) {
