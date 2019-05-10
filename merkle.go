@@ -21,7 +21,7 @@ type TreeOptions struct {
 
 	// DisableHashLeaves determines whether leaf nodes should be hashed or not. By doing disabling this behavior,
 	// you can use a different hash function for leaves or generate a tree that contains already hashed
-	// values. If this is disabled, a length of 32 bytes is enforced for all leaves.
+	// values.
 	DisableHashLeaves bool
 }
 
@@ -182,20 +182,24 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node,
 }
 
 func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
-	data := make([]byte, h.Size()*2)
 	if right == nil {
-		b := data[:h.Size()]
-		copy(b, left)
-		return Node{Hash: b}, nil
+		data := make([]byte, len(left))
+		copy(data, left)
+		return Node{Hash: data}, nil
+	} else if left == nil {
+		data := make([]byte, len(right))
+		copy(data, right)
+		return Node{Hash: data}, nil
 	}
-	firstHalf := left
-	secondHalf := right
+
+	data := make([]byte, len(left)+len(right))
 	if self.Options.EnableHashSorting && bytes.Compare(left, right) > 0 {
-		firstHalf = right
-		secondHalf = left
+		copy(data[:len(right)], right)
+		copy(data[len(right):], left)
+	} else {
+		copy(data[:len(left)], left)
+		copy(data[len(left):], right)
 	}
-	copy(data[:h.Size()], firstHalf)
-	copy(data[h.Size():], secondHalf)
 
 	return NewNode(h, data)
 }

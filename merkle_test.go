@@ -490,6 +490,73 @@ func TestTreeGenerate_DisableHashLeaves(t *testing.T) {
 	assert.Equal(t, tree.Root().Hash, treeHashedLeaves.Root().Hash)
 }
 
+func TestTreeGenerate_DisableHashLeaves_DynamicLeafLengths(t *testing.T) {
+	alpha := sha256.Sum256([]byte("alpha"))
+	beta := md5.Sum([]byte("beta"))
+	items := [][]byte{alpha[:], beta[:]}
+
+	tree := NewTreeWithOpts(TreeOptions{false, true})
+	err := tree.Generate(items, sha256.New())
+	assert.Nil(t, err)
+
+	alphaPlusBeta := append(alpha[:], beta[:]...)
+	expectedHash := sha256.Sum256(alphaPlusBeta)
+
+	assert.Equal(t, expectedHash[:], tree.Root().Hash[:])
+}
+
+func TestTreeGenerate_DisableHashLeaves_DynamicLeafLengths_EnableHashSorting(t *testing.T) {
+	alpha := sha256.Sum256([]byte("alpha"))
+	beta := md5.Sum([]byte("beta"))
+	items := [][]byte{beta[:], alpha[:]}
+
+	tree := NewTreeWithOpts(TreeOptions{true, true})
+	err := tree.Generate(items, sha256.New())
+	assert.Nil(t, err)
+
+	alphaPlusBeta := append(alpha[:], beta[:]...)
+	expectedHash := sha256.Sum256(alphaPlusBeta)
+
+	assert.Equal(t, expectedHash[:], tree.Root().Hash[:])
+}
+
+func TestTreeGenerate_DisableHashLeaves_RightNil(t *testing.T) {
+	a := md5.Sum([]byte("a"))
+	b := md5.Sum([]byte("b"))
+	c := md5.Sum([]byte("c"))
+	items := [][]byte{a[:], b[:], c[:], nil}
+
+	tree := NewTreeWithOpts(TreeOptions{false, true})
+	err := tree.Generate(items, sha256.New())
+	assert.Nil(t, err)
+
+	ab := append(a[:], b[:]...)
+	ab_hashed := sha256.Sum256(ab)
+	abc := append(ab_hashed[:], c[:]...)
+	expectedHash := sha256.Sum256(abc)
+
+	assert.Equal(t, expectedHash[:], tree.Root().Hash[:])
+}
+
+func TestTreeGenerate_DisableHashLeaves_LeftNil(t *testing.T) {
+	a := md5.Sum([]byte("a"))
+	b := md5.Sum([]byte("b"))
+	c := md5.Sum([]byte("c"))
+	items := [][]byte{nil, a[:], b[:], c[:]}
+
+	tree := NewTreeWithOpts(TreeOptions{false, true})
+	err := tree.Generate(items, sha256.New())
+	assert.Nil(t, err)
+
+	bc := append(b[:], c[:]...)
+	bc_hashed := sha256.Sum256(bc)
+	abc := append(a[:], bc_hashed[:]...)
+	expectedHash := sha256.Sum256(abc)
+
+	assert.Equal(t, expectedHash[:], tree.Root().Hash[:])
+}
+
+
 func TestGenerateNodeHashOfUnbalance(t *testing.T) {
 	tree := Tree{}
 	tree.Options.EnableHashSorting = true
