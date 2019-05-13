@@ -69,7 +69,7 @@ func NewTree() Tree {
 	return Tree{Nodes: nil, Levels: nil}
 }
 
-// Returns a slice of the leaf nodes in the tree, if available, else nil
+// Leaves returns a slice of the leaf nodes in the tree, if available, else nil
 func (self *Tree) Leaves() []Node {
 	if self.Levels == nil {
 		return nil
@@ -78,7 +78,7 @@ func (self *Tree) Leaves() []Node {
 	}
 }
 
-// Returns the root node of the tree, if available, else nil
+// Root returns the root node of the tree, if available, else nil
 func (self *Tree) Root() *Node {
 	if self.Nodes == nil {
 		return nil
@@ -87,7 +87,7 @@ func (self *Tree) Root() *Node {
 	}
 }
 
-// Returns all nodes at a given height, where height 1 returns a 1-element
+// GetNodesAtHeight returns all nodes at a given height, where height 1 returns a 1-element
 // slice containing the root node, and a height of tree.Height() returns
 // the leaves
 func (self *Tree) GetNodesAtHeight(h uint64) []Node {
@@ -98,7 +98,7 @@ func (self *Tree) GetNodesAtHeight(h uint64) []Node {
 	}
 }
 
-// Returns the height of this tree
+// Height returns the height of this tree
 func (self *Tree) Height() uint64 {
 	return uint64(len(self.Levels))
 }
@@ -200,7 +200,7 @@ func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
 	return NewNode(h, data)
 }
 
-// Returns the height and number of nodes in an unbalanced binary tree given
+// CalculateHeightAndNodeCount returns the height and number of nodes in an unbalanced binary tree given
 // number of leaves
 func CalculateHeightAndNodeCount(leaves uint64) (height, nodeCount uint64) {
 	height = calculateTreeHeight(leaves)
