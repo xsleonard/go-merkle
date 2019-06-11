@@ -23,6 +23,11 @@ type TreeOptions struct {
 	// you can use a different hash function for leaves or generate a tree that contains already hashed
 	// values. If this is disabled, a length of 32 bytes is enforced for all leaves.
 	DisableHashLeaves bool
+
+	// DoubleOddNodes repeats trailing nodes so they become their own
+	// left/right pair and are hashed together. Otherwise the default
+	// behavior is to simply forward odd nodes to the next layer.
+	DoubleOddNodes bool
 }
 
 // Node in the merkle tree
@@ -184,9 +189,12 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node,
 func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
 	data := make([]byte, h.Size()*2)
 	if right == nil {
-		b := data[:h.Size()]
-		copy(b, left)
-		return Node{Hash: b}, nil
+		if !self.Options.DoubleOddNodes {
+			b := data[:h.Size()]
+			copy(b, left)
+			return Node{Hash: b}, nil
+		}
+		right = left
 	}
 	firstHalf := left
 	secondHalf := right
