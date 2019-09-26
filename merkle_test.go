@@ -484,7 +484,13 @@ func TestTreeGenerate_DisableHashLeaves(t *testing.T) {
 	err := treeHashedLeaves.Generate(items, h)
 	assert.Nil(t, err)
 
-	tree := NewTreeWithOpts(TreeOptions{false, true})
+	tree := NewTreeWithOpts(TreeOptions{false, true, false})
+	err = tree.Generate(items_hashed, h)
+	assert.Nil(t, err)
+	assert.Equal(t, tree.Root().Hash, treeHashedLeaves.Root().Hash)
+
+	// DoubleOddNodes should not matter when there are even nodes.
+	tree = NewTreeWithOpts(TreeOptions{false, true, true})
 	err = tree.Generate(items_hashed, h)
 	assert.Nil(t, err)
 	assert.Equal(t, tree.Root().Hash, treeHashedLeaves.Root().Hash)
