@@ -18,18 +18,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// SimpleHash: does nothing
+var simpleHashData []byte
 
-var SimpleHashData []byte
-
-type SimpleHash struct{}
+// simpleHash does nothing
+type simpleHash struct{}
 
 func NewSimpleHash() hash.Hash {
-	return SimpleHash{}
+	return simpleHash{}
 }
 
-func (self SimpleHash) Write(p []byte) (int, error) {
-	size := self.Size()
+func (h simpleHash) Write(p []byte) (int, error) {
+	size := h.Size()
 	datalen := (len(p) / size) * size
 	if len(p) == 0 || len(p)%size != 0 {
 		datalen += size
@@ -46,76 +45,76 @@ func (self SimpleHash) Write(p []byte) (int, error) {
 		}
 	}
 
-	SimpleHashData = append(SimpleHashData, block...)
+	simpleHashData = append(simpleHashData, block...)
 	return size, nil
 }
-func (self SimpleHash) Sum(p []byte) []byte {
-	p = append(p[:], SimpleHashData[:]...)
+func (h simpleHash) Sum(p []byte) []byte {
+	p = append(p[:], simpleHashData[:]...)
 	return p
 }
-func (self SimpleHash) Reset() {
-	SimpleHashData = nil
+func (h simpleHash) Reset() {
+	simpleHashData = nil
 }
-func (self SimpleHash) Size() int {
+func (h simpleHash) Size() int {
 	return 32
 }
-func (self SimpleHash) BlockSize() int {
+func (h simpleHash) BlockSize() int {
 	return 32
 }
 
-type NotHash struct{}
+type notHash struct{}
 
 func NewNotHash() hash.Hash {
-	return NotHash{}
+	return notHash{}
 }
-func (self NotHash) Write(p []byte) (int, error) {
+func (h notHash) Write(p []byte) (int, error) {
 	return 32, nil
 }
-func (self NotHash) Sum(p []byte) []byte {
+func (h notHash) Sum(p []byte) []byte {
 	return p
 }
-func (self NotHash) Reset() {
+func (h notHash) Reset() {
 }
-func (self NotHash) Size() int {
+func (h notHash) Size() int {
 	return 32
 }
-func (self NotHash) BlockSize() int {
+func (h notHash) BlockSize() int {
 	return 32
 }
 
-// FailingHash: always returns error on Write
-type FailingHash struct {
+// failingHash: always returns error on Write
+type failingHash struct {
 	SucceedFor int
 }
 
-var failingHashWriteAttempts int = 0
+var failingHashWriteAttempts int
 
-func NewFailingHashAt(n int) FailingHash {
+func newFailingHashAt(n int) failingHash {
 	failingHashWriteAttempts = 0
-	return FailingHash{SucceedFor: n}
+	return failingHash{SucceedFor: n}
 }
 
-func NewFailingHash() FailingHash {
-	return NewFailingHashAt(0)
+func newFailingHash() failingHash {
+	return newFailingHashAt(0)
 }
 
-func (self FailingHash) Write(p []byte) (int, error) {
-	failingHashWriteAttempts += 1
-	if failingHashWriteAttempts > self.SucceedFor {
+func (h failingHash) Write(p []byte) (int, error) {
+	failingHashWriteAttempts++
+	if failingHashWriteAttempts > h.SucceedFor {
 		return 0, errors.New("Failed to write hash")
-	} else {
-		return 0, nil
 	}
+
+	return 0, nil
 }
-func (self FailingHash) Sum(p []byte) []byte {
+func (h failingHash) Sum(p []byte) []byte {
 	return p
 }
-func (self FailingHash) Reset() {
+func (h failingHash) Reset() {
 }
-func (self FailingHash) Size() int {
+func (h failingHash) Size() int {
 	return 0
 }
-func (self FailingHash) BlockSize() int {
+func (h failingHash) BlockSize() int {
 	return 0
 }
 
@@ -278,7 +277,7 @@ func TestIsPowerOfTwo(t *testing.T) {
 /* Tree */
 
 func containsNode(nodes []Node, node *Node) bool {
-	/* Returns trueif a *Node is in a []Node */
+	/* Returns true if a *Node is in a []Node */
 	for i := 0; i < len(nodes); i++ {
 		if node == &nodes[i] {
 			return true
@@ -287,12 +286,12 @@ func containsNode(nodes []Node, node *Node) bool {
 	return false
 }
 
-func createDummyTreeData(count, size int, use_rand bool) [][]byte {
+func createDummyTreeData(count, size int, useRand bool) [][]byte {
 	/* Creates an array of bytes with nonsense in them */
 	data := make([][]byte, count)
 	for i := 0; i < count; i++ {
 		garbage := make([]byte, size)
-		if use_rand {
+		if useRand {
 			read := 0
 			for read < size {
 				n, _ := rand.Read(garbage[read:])
@@ -408,7 +407,7 @@ func TestNewNode(t *testing.T) {
 	assert.Nil(t, n.Hash)
 
 	// Check hash error handling
-	h = NewFailingHash()
+	h = newFailingHash()
 	n, err = NewNode(h, block)
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Failed to write hash")
@@ -478,20 +477,28 @@ func TestTreeGenerate_DisableHashLeaves(t *testing.T) {
 	items := [][]byte{[]byte("alpha"), []byte("beta")}
 	alpha := sha256.Sum256(items[0])
 	beta := sha256.Sum256(items[1])
-	items_hashed := [][]byte{alpha[:32], beta[:32]}
+	itemsHashes := [][]byte{alpha[:h.Size()], beta[:h.Size()]}
 
 	treeHashedLeaves := NewTree()
 	err := treeHashedLeaves.Generate(items, h)
 	assert.Nil(t, err)
 
-	tree := NewTreeWithOpts(TreeOptions{false, true, false})
-	err = tree.Generate(items_hashed, h)
+	tree := NewTreeWithOpts(TreeOptions{
+		EnableHashSorting: false,
+		DisableHashLeaves: true,
+		DoubleOddNodes:    false,
+	})
+	err = tree.Generate(itemsHashes, h)
 	assert.Nil(t, err)
 	assert.Equal(t, tree.Root().Hash, treeHashedLeaves.Root().Hash)
 
 	// DoubleOddNodes should not matter when there are even nodes.
-	tree = NewTreeWithOpts(TreeOptions{false, true, true})
-	err = tree.Generate(items_hashed, h)
+	tree = NewTreeWithOpts(TreeOptions{
+		EnableHashSorting: false,
+		DisableHashLeaves: true,
+		DoubleOddNodes:    true,
+	})
+	err = tree.Generate(itemsHashes, h)
 	assert.Nil(t, err)
 	assert.Equal(t, tree.Root().Hash, treeHashedLeaves.Root().Hash)
 }
@@ -566,13 +573,13 @@ func TestGenerateFailedHash(t *testing.T) {
 	tree := NewTree()
 	data := createDummyTreeData(16, 16, true)
 	// Fail hash during the leaf generation
-	err := tree.Generate(data, NewFailingHash())
+	err := tree.Generate(data, newFailingHash())
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Failed to write hash")
 
 	// Fail hash during internal node generation
 	data = createDummyTreeData(16, 16, true)
-	err = tree.Generate(data, NewFailingHashAt(20))
+	err = tree.Generate(data, newFailingHashAt(20))
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Failed to write hash")
 }

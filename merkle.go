@@ -3,7 +3,7 @@ Use of this source code is governed by the MIT license that can be found
 in the LICENSE file.
 */
 
-/* Package merkle is a fixed merkle tree implementation */
+//Package merkle is a fixed merkle tree implementation
 package merkle
 
 import (
@@ -41,7 +41,9 @@ type Node struct {
 // will be added without being hashed.
 func NewNode(h hash.Hash, block []byte) (Node, error) {
 	if h == nil {
-		return Node{Hash: block}, nil
+		return Node{
+			Hash: block,
+		}, nil
 	}
 	if block == nil {
 		return Node{}, nil
@@ -64,52 +66,57 @@ type Tree struct {
 	Options TreeOptions
 }
 
+// NewTreeWithOpts creates a Tree with custom options
 func NewTreeWithOpts(options TreeOptions) Tree {
 	tree := NewTree()
 	tree.Options = options
 	return tree
 }
 
+// NewTree creates a Tree with the default options
 func NewTree() Tree {
-	return Tree{Nodes: nil, Levels: nil}
+	return Tree{
+		Nodes:  nil,
+		Levels: nil,
+	}
 }
 
 // Leaves returns a slice of the leaf nodes in the tree, if available, else nil
-func (self *Tree) Leaves() []Node {
-	if self.Levels == nil {
+func (tree *Tree) Leaves() []Node {
+	if tree.Levels == nil {
 		return nil
-	} else {
-		return self.Levels[len(self.Levels)-1]
 	}
+
+	return tree.Levels[len(tree.Levels)-1]
 }
 
 // Root returns the root node of the tree, if available, else nil
-func (self *Tree) Root() *Node {
-	if self.Nodes == nil {
+func (tree *Tree) Root() *Node {
+	if tree.Nodes == nil {
 		return nil
-	} else {
-		return &self.Levels[0][0]
 	}
+
+	return &tree.Levels[0][0]
 }
 
 // GetNodesAtHeight returns all nodes at a given height, where height 1 returns a 1-element
 // slice containing the root node, and a height of tree.Height() returns
 // the leaves
-func (self *Tree) GetNodesAtHeight(h uint64) []Node {
-	if self.Levels == nil || h == 0 || h > uint64(len(self.Levels)) {
+func (tree *Tree) GetNodesAtHeight(h uint64) []Node {
+	if tree.Levels == nil || h == 0 || h > uint64(len(tree.Levels)) {
 		return nil
-	} else {
-		return self.Levels[h-1]
 	}
+
+	return tree.Levels[h-1]
 }
 
 // Height returns the height of this tree
-func (self *Tree) Height() uint64 {
-	return uint64(len(self.Levels))
+func (tree *Tree) Height() uint64 {
+	return uint64(len(tree.Levels))
 }
 
-// Generates the tree nodes
-func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
+// Generate generates the tree nodes
+func (tree *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 	blockCount := uint64(len(blocks))
 	if blockCount == 0 {
 		return errors.New("Empty tree")
@@ -122,7 +129,7 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 	for i, block := range blocks {
 		var node Node
 		var err error
-		if self.Options.DisableHashLeaves {
+		if tree.Options.DisableHashLeaves {
 			node, err = NewNode(nil, block)
 		} else {
 			node, err = NewNode(hashf, block)
@@ -139,7 +146,7 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 	h := height - 1
 	for ; h > 0; h-- {
 		below := levels[h]
-		wrote, err := self.generateNodeLevel(below, current, hashf)
+		wrote, err := tree.generateNodeLevel(below, current, hashf)
 		if err != nil {
 			return err
 		}
@@ -147,8 +154,8 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 		current = current[wrote:]
 	}
 
-	self.Nodes = nodes
-	self.Levels = levels
+	tree.Nodes = nodes
+	tree.Levels = levels
 	return nil
 }
 
@@ -156,8 +163,7 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 // is calculated to be 1/2 the number of nodes in the lower rung.  The newly
 // created nodes will reference their Left and Right children.
 // Returns the number of nodes added to current
-func (self *Tree) generateNodeLevel(below []Node, current []Node,
-	h hash.Hash) (uint64, error) {
+func (tree *Tree) generateNodeLevel(below []Node, current []Node, h hash.Hash) (uint64, error) {
 	h.Reset()
 
 	end := (len(below) + (len(below) % 2)) / 2
@@ -167,13 +173,13 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node,
 		ileft := 2 * i
 		iright := 2*i + 1
 		left := &below[ileft]
-		var right *Node = nil
+		var right *Node
 		var rightHash []byte
 		if len(below) > iright {
 			right = &below[iright]
 			rightHash = right.Hash
 		}
-		node, err := self.generateNode(below[ileft].Hash, rightHash, h)
+		node, err := tree.generateNode(below[ileft].Hash, rightHash, h)
 		if err != nil {
 			return 0, err
 		}
@@ -186,10 +192,10 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node,
 	return uint64(end), nil
 }
 
-func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
+func (tree *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
 	data := make([]byte, h.Size()*2)
 	if right == nil {
-		if !self.Options.DoubleOddNodes {
+		if !tree.Options.DoubleOddNodes {
 			b := data[:h.Size()]
 			copy(b, left)
 			return Node{Hash: b}, nil
@@ -198,7 +204,7 @@ func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
 	}
 	firstHalf := left
 	secondHalf := right
-	if self.Options.EnableHashSorting && bytes.Compare(left, right) > 0 {
+	if tree.Options.EnableHashSorting && bytes.Compare(left, right) > 0 {
 		firstHalf = right
 		secondHalf = left
 	}
@@ -238,9 +244,9 @@ func calculateNodeCount(height, size uint64) uint64 {
 func calculateTreeHeight(nodeCount uint64) uint64 {
 	if nodeCount == 0 {
 		return 0
-	} else {
-		return logBaseTwo(nextPowerOfTwo(nodeCount)) + 1
 	}
+
+	return logBaseTwo(nextPowerOfTwo(nodeCount)) + 1
 }
 
 // Returns true if n is a power of 2
@@ -268,7 +274,7 @@ func nextPowerOfTwo(n uint64) uint64 {
 }
 
 // Lookup table for integer log2 implementation
-var log2lookup []uint64 = []uint64{
+var log2lookup = []uint64{
 	0xFFFFFFFF00000000,
 	0x00000000FFFF0000,
 	0x000000000000FF00,
@@ -285,7 +291,7 @@ func logBaseTwo(x uint64) uint64 {
 	ct := uint64(0)
 	for x != 0 {
 		x >>= 1
-		ct += 1
+		ct++
 	}
 	return ct - 1
 }
