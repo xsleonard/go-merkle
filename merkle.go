@@ -25,8 +25,8 @@ type TreeOptions struct {
 	DisableHashLeaves bool
 
 	// DoubleOddNodes repeats trailing nodes so they become their own
-	// left/right pair and are hashed together. Otherwise the default
-	// behavior is to simply forward odd nodes to the next layer.
+	// left/right pair and are hashed together. The default behavior is to
+	// use a null hash as the missing pair.
 	DoubleOddNodes bool
 }
 
