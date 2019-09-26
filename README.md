@@ -12,10 +12,11 @@ Example Use
 package main
 
 import (
-    "crypto/md5"
-    "fmt"
-    "github.com/xsleonard/go-merkle"
+    "crypto/sha256"
     "io/ioutil"
+    "fmt"
+
+    "github.com/xsleonard/go-merkle"
 )
 
 func splitData(data []byte, size int) [][]byte {
@@ -46,7 +47,7 @@ func main() {
     // Create & generate the tree with sorted hashes
     // A tree with pair wise sorted hashes allows for a representation of proofs which are more space efficient
     //tree := merkle.NewTreeWithOpts(TreeOptions{EnableHashSorting: true})
-    err = tree.Generate(blocks, md5.New())
+    err = tree.Generate(blocks, sha256.New())
     if err != nil {
         fmt.Println(err)
         return
