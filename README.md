@@ -8,7 +8,7 @@ A fixed Merkle Tree implementation in Go
 Example Use
 ===========
 
-```
+```go
 package main
 
 import (
